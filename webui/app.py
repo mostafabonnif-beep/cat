@@ -599,7 +599,7 @@ def run_viral_cutter(input_source, project_name, url, video_file, segments, vira
                      platform=None, metadata_gate=None, title_language=None, polish=False, music=None, logo=None,
                      broll=None, broll_query=None, broll_opacity=None,
                      sfx_dir=None, sfx_volume=None,
-                     cookies_browser=None, sponsorblock=None, output_aspect=None, reframe_mode=None,
+                     cookies_browser=None, sponsorblock=None, live_wait_minutes=None, output_aspect=None, reframe_mode=None,
                      force_new_segments=False, visual_check="auto", visual_gate="warn",
                      visual_frames=4, visual_model=None, auto_download_visual=False,
                      watermark_position="bottom-right", watermark_size=0.12, watermark_opacity=0.90,
@@ -850,6 +850,7 @@ def run_viral_cutter(input_source, project_name, url, video_file, segments, vira
             metadata_gate=metadata_gate,
             cookies_browser=cookies_browser,
             sponsorblock=sponsorblock,
+            live_wait_minutes=live_wait_minutes,
             title_language=title_language,
             output_aspect=output_aspect,
             reframe_mode=reframe_mode,
@@ -1640,6 +1641,13 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                             label=i18n("🚫 SponsorBlock (skip in-video ads)"),
                             value="",
                             info=i18n("v7.19: removes sponsored segments at download time so cuts never include ad reads."),
+                        )
+                        live_wait_minutes_input = gr.Number(
+                            label=i18n("🔴 Live stream: wait for end (minutes)"),
+                            value=0,
+                            minimum=0,
+                            step=15,
+                            info=i18n("v7.20: if the URL is a live stream / premiere (e.g. https://youtube.com/live/ID), wait up to this many minutes for it to end, then download the VOD automatically. 0 = off (download immediately)."),
                         )
                         gr.Markdown("### 🔐 ربط قناة YouTube قبل المعالجة")
                         gr.Markdown(
@@ -3024,7 +3032,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     underline_input, strikeout_input, border_style_input, remove_punc_input, caption_animation_input, auto_emoji_input,
     video_quality_input, use_youtube_subs_input, translate_input, safety_mode_input, safety_ai_input,
     platform_input, metadata_gate_input, title_language_input, polish_input, music_input, logo_input,
-    broll_input, broll_query_input, broll_opacity_input, sfx_dir_input, sfx_volume_input, cookies_input, sponsorblock_input,
+    broll_input, broll_query_input, broll_opacity_input, sfx_dir_input, sfx_volume_input, cookies_input, sponsorblock_input, live_wait_minutes_input,
     aspect_input, reframe_mode_input, force_new_segments_input,
     visual_check_input, visual_gate_input, visual_frames_input, visual_model_input, auto_download_visual_input,
     watermark_position_input, watermark_size_input, watermark_opacity_input,
@@ -3049,7 +3057,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     underline_input, strikeout_input, border_style_input, remove_punc_input, caption_animation_input, auto_emoji_input,
     video_quality_input, use_youtube_subs_input, translate_input, safety_mode_input, safety_ai_input,
     platform_input, metadata_gate_input, title_language_input, polish_input, music_input, logo_input,
-    broll_input, broll_query_input, broll_opacity_input, sfx_dir_input, sfx_volume_input, cookies_input, sponsorblock_input,
+    broll_input, broll_query_input, broll_opacity_input, sfx_dir_input, sfx_volume_input, cookies_input, sponsorblock_input, live_wait_minutes_input,
     aspect_input, reframe_mode_input, force_new_segments_input,
     visual_check_input, visual_gate_input, visual_frames_input, visual_model_input, auto_download_visual_input,
     watermark_position_input, watermark_size_input, watermark_opacity_input,
@@ -3075,7 +3083,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     underline_input, strikeout_input, border_style_input, remove_punc_input, caption_animation_input, auto_emoji_input,
     video_quality_input, use_youtube_subs_input, translate_input, safety_mode_input, safety_ai_input,
     platform_input, metadata_gate_input, title_language_input, polish_input, music_input, logo_input,
-    broll_input, broll_query_input, broll_opacity_input, sfx_dir_input, sfx_volume_input, cookies_input, sponsorblock_input,
+    broll_input, broll_query_input, broll_opacity_input, sfx_dir_input, sfx_volume_input, cookies_input, sponsorblock_input, live_wait_minutes_input,
     aspect_input, reframe_mode_input, force_new_segments_input,
     visual_check_input, visual_gate_input, visual_frames_input, visual_model_input, auto_download_visual_input,
     watermark_position_input, watermark_size_input, watermark_opacity_input,

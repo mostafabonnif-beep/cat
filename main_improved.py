@@ -624,6 +624,8 @@ def main():
                         help="Path to a Netscape-format cookies.txt file exported for yt-dlp (alternative to --cookies-from-browser)")
     parser.add_argument("--sponsorblock", default=None,
                         help="Remove in-video sponsor segments at download time using SponsorBlock (comma-separated categories: sponsor,intro,outro,selfpromo,interaction,music_offtopic — or 'all'). Makes cuts cleaner and avoids ad content in clips.")
+    parser.add_argument("--live-wait", type=float, default=None, metavar="MINUTES",
+                        help="v7.20: if the URL is a live stream / premiere (e.g. https://youtube.com/live/ID), wait up to this many minutes for it to END, then download the resulting VOD automatically.")
     parser.add_argument("--title-language", default="auto",
                         help="Output language for titles/captions: 'auto' (match the transcript, default) or a code like 'ar', 'en', 'fr', 'es', 'pt', 'de', 'tr', 'ru', 'hi'")
     parser.add_argument("--webui", action="store_true",
@@ -1042,11 +1044,26 @@ def main():
             _auth_retried = False
             while True:
                 try:
-                    download_result = download_video.download(
-                        url, download_subs=download_subs, quality=args.video_quality,
-                        cookies_from_browser=args.cookies_from_browser,
-                        cookies_file=args.cookies,
-                        sponsorblock=getattr(args, "sponsorblock", None))
+                    # v7.20: live-stream mode — when --live-wait is set and the
+                    # URL is a live/premiere (e.g. youtube.com/live/ID), wait
+                    # for the stream to end, then download the resulting VOD.
+                    if getattr(args, "live_wait", None):
+                        from scripts import download_live
+                        print(i18n("Live-stream mode: waiting for the stream to end before downloading..."))
+                        download_result = download_live.download_when_live_ends(
+                            url, base_root=args.virals if hasattr(args, "virals") and args.virals else "VIRALS",
+                            quality=args.video_quality,
+                            cookies_from_browser=args.cookies_from_browser,
+                            cookies_file=args.cookies,
+                            max_wait_seconds=float(args.live_wait) * 60.0,
+                            progress=lambda info: print("[live] {} — {}".format(
+                                info.get("status"), info.get("message"))))
+                    else:
+                        download_result = download_video.download(
+                            url, download_subs=download_subs, quality=args.video_quality,
+                            cookies_from_browser=args.cookies_from_browser,
+                            cookies_file=args.cookies,
+                            sponsorblock=getattr(args, "sponsorblock", None))
                     break
                 except download_video.AuthNeededError:
                     if (_interactive_tty and not args.skip_prompts

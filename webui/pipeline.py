@@ -39,7 +39,7 @@ def build_command(main_script_path, source_args, *, segments=None, viral=False,
                   broll=None, broll_query=None, broll_opacity=None,
                   sfx_dir=None, sfx_volume=None,
                   checkpoint=None, metadata_gate=None, cookies_browser=None,
-                  sponsorblock=None,
+                  sponsorblock=None, live_wait_minutes=None,
                   title_language=None, music_check=None, music_gate=None,
                   output_aspect=None, reframe_mode=None, force_new_segments=False,
                   visual_check="auto", visual_gate="warn", visual_frames=None,
@@ -163,6 +163,8 @@ def build_command(main_script_path, source_args, *, segments=None, viral=False,
         cmd.extend(["--cookies-from-browser", str(cookies_browser)])
     if sponsorblock:
         cmd.extend(["--sponsorblock", str(sponsorblock)])
+    if live_wait_minutes:
+        cmd.extend(["--live-wait", str(live_wait_minutes)])
 
     if title_language and title_language != "auto":
         cmd.extend(["--title-language", str(title_language)])
