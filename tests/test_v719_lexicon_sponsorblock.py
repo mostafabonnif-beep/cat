@@ -135,3 +135,56 @@ class TestSponsorBlockWiring:
         code = open(os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "main_improved.py"), encoding="utf-8").read()
         assert '"--sponsorblock"' in code
+
+
+class TestCIScripts:
+    def test_workflow_yamls_parse(self):
+        import glob
+        try:
+            import yaml
+        except ImportError:
+            import pytest
+            pytest.skip("pyyaml not installed")
+        for f in glob.glob(os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), ".github", "workflows", "*.yml")):
+            with open(f, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+            assert isinstance(data, dict) and data.get("jobs")
+
+    def test_ci_helper_imports(self):
+        from scripts.github_policy_watch_ci import main as policy_main
+        from scripts.github_lexicon_ci import main as lexicon_main
+        assert callable(policy_main) and callable(lexicon_main)
+
+    def test_policy_ci_emits_outputs(self, monkeypatch, tmp_path):
+        from scripts import github_policy_watch_ci as gci
+        out = tmp_path / "gh_output"
+        out.write_text("", encoding="utf-8")
+        monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+        monkeypatch.setattr(
+            gci, "check_policy_pages",
+            lambda: {"status": "changed", "changes": ["hate_speech"],
+                     "markers": {"hate_speech": ["x"]}})
+        assert gci.main() == 0
+        content = out.read_text(encoding="utf-8")
+        assert "changed=yes" in content
+        assert "hate_speech" in content
+
+    def test_lexicon_ci_emits_outputs(self, monkeypatch, tmp_path):
+        from scripts import github_lexicon_ci as gci
+        out = tmp_path / "gh_output"
+        out.write_text("", encoding="utf-8")
+        monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+
+        class FakeResp:
+            def read(self):
+                return b"brand-new-upstream-content"
+
+        def fake_urlopen(req, timeout=20):
+            return FakeResp()
+
+        monkeypatch.setattr(gci.urllib.request, "urlopen", fake_urlopen)
+        assert gci.main() == 0
+        content = out.read_text(encoding="utf-8")
+        assert "changed=" in content
+        assert "upstream_sha256=" in content

@@ -1,3 +1,23 @@
+# Test-only dependencies for CI (ci.yml installs THIS file only).
+# v7.19 fix: the WebUI + video tests need the full lightweight stack —
+# previously CI failed at collection with ModuleNotFoundError (cv2, gradio).
 pytest>=8.0
 numpy<2
 cryptography
+
+# OpenCV headless — scripts/edit_video.py, two_face, one_face,
+# face_detection_insightface, media_validation import cv2 at module level.
+opencv-python-headless
+
+# WebUI stack — webui/app.py imports gradio at module level; tests
+# test_ui_safety_gates.py / test_webui_utils.py import webui.app.
+gradio
+fastapi
+uvicorn
+psutil
+tqdm
+deep-translator
+
+# Optional AI backends imported defensively, but present in CI to keep the
+# full test surface green (test_ab_and_crash, test_cli_main).
+google-genai
