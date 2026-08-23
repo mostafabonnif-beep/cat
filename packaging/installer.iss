@@ -9,7 +9,7 @@
 
 #define MyAppName "OUSSAMA Cutter"
 #define MyAppPublisher "OUSSAMA Cutter"
-#define MyAppURL "https://github.com/eldjazaireldjadida4-web/ViralCutter"
+#define MyAppURL "https://github.com/mostafabonnif-beep/cat"
 #define MyAppExeName "OUSSAMA-Cutter.exe"
 
 [Setup]

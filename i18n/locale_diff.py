@@ -1,16 +1,19 @@
 import json
 import os
+import sys
 from collections import OrderedDict
 
-# Define the standard file name
-standard_file = "locale/zh_CN.json"
+# en_US is the canonical reference locale (the app falls back to it at
+# runtime — i18n/i18n.py). zh_CN was removed in v7.18, so use en_US.
+base_dir = os.path.dirname(os.path.abspath(__file__))
+standard_file = os.path.join(base_dir, "locale/en_US.json")
 
 # Find all JSON files in the directory
-dir_path = "locale/"
+dir_path = os.path.join(base_dir, "locale/")
 languages = [
     os.path.join(dir_path, f)
-    for f in os.listdir(dir_path)
-    if f.endswith(".json") and f != standard_file
+    for f in sorted(os.listdir(dir_path))
+    if f.endswith(".json") and f != os.path.basename(standard_file)
 ]
 
 # Load the standard file
@@ -28,7 +31,7 @@ for lang_file in languages:
 
     miss = set(lang_data.keys()) - set(standard_data.keys())
 
-    # Add any missing keys to the language file
+    # Add any missing keys to the language file (as English fallback text)
     for key in diff:
         lang_data[key] = key
 
@@ -45,3 +48,5 @@ for lang_file in languages:
     with open(lang_file, "w", encoding="utf-8") as f:
         json.dump(lang_data, f, ensure_ascii=False, indent=4, sort_keys=True)
         f.write("\n")
+    print(f"[locale_diff] {os.path.basename(lang_file)}: "
+          f"{len(diff)} keys added, {len(miss)} keys removed")

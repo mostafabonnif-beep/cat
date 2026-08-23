@@ -222,7 +222,7 @@ def _format_attempts(selected_format):
 
 
 def download(url, base_root="VIRALS", download_subs=True, quality="best",
-             cookies_from_browser=None, cookies_file=None):
+             cookies_from_browser=None, cookies_file=None, sponsorblock=None):
     _require_yt_dlp()
     # 1. Extrair informações do vídeo para pegar o título
     print(i18n("Extracting video information..."))
@@ -324,6 +324,11 @@ def download(url, base_root="VIRALS", download_subs=True, quality="best",
         'quiet': False,
         'no_warnings': False,
         'force_ipv4': True,
+        # v7.19: SponsorBlock — remove in-video sponsor / intro / outro /
+        # self-promo segments at download time so cuts never include them.
+        # Uses yt-dlp's native sponsorblock support (no extra dependency).
+        'sponsorblock': sponsorblock or None,
+        'sponsorblock_remove': (sponsorblock or "").split(",") if sponsorblock else None,
         # Authentication for private / age-restricted videos (v6.2)
         'cookiesfrombrowser': (cookies_from_browser,) if cookies_from_browser else None,
         'cookiefile': cookies_file or None,

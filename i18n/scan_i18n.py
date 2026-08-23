@@ -49,7 +49,9 @@ print()
 print("Total unique:", len(code_keys))
 
 
-standard_file = "i18n/locale/zh_CN.json"
+# en_US is the canonical reference locale (the app falls back to it at
+# runtime — i18n/i18n.py). zh_CN was removed in v7.18, so use en_US.
+standard_file = "i18n/locale/en_US.json"
 with open(standard_file, "r", encoding="utf-8") as f:
     standard_data = json.load(f, object_pairs_hook=OrderedDict)
 standard_keys = set(standard_data.keys())
@@ -57,19 +59,18 @@ standard_keys = set(standard_data.keys())
 # Define the standard file name
 unused_keys = standard_keys - code_keys
 print("Unused keys:", len(unused_keys))
-for unused_key in unused_keys:
+for unused_key in sorted(unused_keys):
     print("\t", unused_key)
 
 missing_keys = code_keys - standard_keys
 print("Missing keys:", len(missing_keys))
-for missing_key in missing_keys:
+for missing_key in sorted(missing_keys):
     print("\t", missing_key)
 
 code_keys_dict = OrderedDict()
 for s in strings:
     code_keys_dict[s] = s
 
-# write back
-with open(standard_file, "w", encoding="utf-8") as f:
-    json.dump(code_keys_dict, f, ensure_ascii=False, indent=4, sort_keys=True)
-    f.write("\n")
+# Report-only mode: never rewrite the canonical en_US locale with the
+# code-scanned key set (that would destructively drop translations).
+print("\n[scan] read-only report against", standard_file)

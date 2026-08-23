@@ -622,6 +622,8 @@ def main():
                         help="Use your browser's login cookies to download private / age-restricted videos (e.g. --cookies-from-browser chrome)")
     parser.add_argument("--cookies", default=None,
                         help="Path to a Netscape-format cookies.txt file exported for yt-dlp (alternative to --cookies-from-browser)")
+    parser.add_argument("--sponsorblock", default=None,
+                        help="Remove in-video sponsor segments at download time using SponsorBlock (comma-separated categories: sponsor,intro,outro,selfpromo,interaction,music_offtopic — or 'all'). Makes cuts cleaner and avoids ad content in clips.")
     parser.add_argument("--title-language", default="auto",
                         help="Output language for titles/captions: 'auto' (match the transcript, default) or a code like 'ar', 'en', 'fr', 'es', 'pt', 'de', 'tr', 'ru', 'hi'")
     parser.add_argument("--webui", action="store_true",
@@ -1043,7 +1045,8 @@ def main():
                     download_result = download_video.download(
                         url, download_subs=download_subs, quality=args.video_quality,
                         cookies_from_browser=args.cookies_from_browser,
-                        cookies_file=args.cookies)
+                        cookies_file=args.cookies,
+                        sponsorblock=getattr(args, "sponsorblock", None))
                     break
                 except download_video.AuthNeededError:
                     if (_interactive_tty and not args.skip_prompts
