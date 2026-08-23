@@ -1,0 +1,30 @@
+# ViralCutter — direct upload stack (Roadmap 2.2)
+#
+# Install with:  pip install -r requirements-upload.txt
+#
+# Enables the real YouTube uploader in scripts/upload_gate.py:
+#   1. Get OAuth client secrets: https://console.cloud.google.com/apis/credentials
+#      (OAuth 2.0 Client ID → Desktop app, enable "YouTube Data API v3")
+#   2. Save the JSON as client_secrets.json (or set YT_CLIENT_SECRETS_FILE)
+#   3. python -m scripts.upload_gate --project <dir> --upload youtube \
+#         --video clip.mp4 --title "..." --caption "..." --hashtags "#shorts"
+#      (first run opens a browser for the OAuth consent)
+#
+# YouTube uploader (OAuth + Data API v3) — see usage above.
+#
+# TikTok / Instagram uploaders are implemented in upload_gate.py with
+# real OAuth + the official APIs (stdlib transport, no extra pip deps).
+#   - TikTok: requires an app APPROVED for Content Posting API (video.publish).
+#   - Instagram: requires IG_ACCESS_TOKEN + IG_USER_ID; the clip is
+#     auto-hosted to a public URL (catbox/0x0.st) unless IG_VIDEO_URL is set.
+# Diagnose any platform with: python -m scripts.upload_gate --check <platform>
+
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+
+# Music fingerprint check (Roadmap 2.3) — OPTIONAL:
+#   pip install pyacoustid        # Python Chromaprint bindings (needs native lib)
+#   OR drop fpcalc.exe on PATH    # https://github.com/acoustid/chromaprint/releases
+# pyacoustid is optional and is intentionally installed separately.
+# Use fpcalc.exe or install pyacoustid only when enabling music fingerprinting.

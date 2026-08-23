@@ -1,0 +1,25 @@
+# Outras dependencias essenciais
+numpy<2  # whisperx/pyannote break on NumPy 2.x (np.NaN removed)
+g4f[all]
+yt-dlp[default]
+ffmpeg-python
+mediapipe
+google-genai
+google-generativeai
+insightface
+gradio
+opencv-python
+psutil
+fastapi
+uvicorn
+deep-translator
+tqdm
+
+# Optional: install whisperx manually if you want the advanced transcription path.
+
+# v6 optional features:
+#   - visual content check (Roadmap 2.1): pip install onnxruntime
+#   - real API-key encryption (Roadmap 4.4): pip install cryptography
+#   - auto-update builds: pip install pyinstaller  (see packaging/)
+onnxruntime
+cryptography

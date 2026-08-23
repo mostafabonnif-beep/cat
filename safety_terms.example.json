@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this file to 'safety_terms.json' (repo root or inside a project folder). 'extra_terms' ADDS words to block (severity: high|medium|low). 'allow_terms' EXCLUDES words from the built-in blocklist — use it to fix false positives (e.g. a history channel saying 'منغولي').",
+  "extra_terms": [
+    {"term": "كلمة محظورة إضافية", "lang": "ar", "severity": "high", "category": "custom"},
+    {"term": "another banned phrase", "lang": "en", "severity": "medium", "category": "custom"}
+  ],
+  "allow_terms": [
+    "كلمة مسموح بها رغم وجودها في القائمة المدمجة"
+  ]
+}

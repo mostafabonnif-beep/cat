@@ -1,0 +1,961 @@
+{
+  "version": 2,
+  "updated": "2026-08-23",
+  "source": "ViralCutter built-in blocklist",
+  "terms": [
+    {
+      "term": "روث البشر",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "حثالة البشر",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "حثالة المجتمع",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "ابن الكلب",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "يا كلب",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "يا حيوان",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "يا بهيم",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "كفار",
+      "lang": "ar",
+      "severity": "low",
+      "category": "hate_slur"
+    },
+    {
+      "term": "كفرة",
+      "lang": "ar",
+      "severity": "low",
+      "category": "hate_slur"
+    },
+    {
+      "term": "ملاحدة",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_slur"
+    },
+    {
+      "term": "روافض",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "رافضي",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "نواصب",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "صهيوني قذر",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "يهودي قذر",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "نصارى قذرون",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "عبيد",
+      "lang": "ar",
+      "severity": "low",
+      "category": "hate_slur"
+    },
+    {
+      "term": "زنجي",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "عرق حقير",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "جنس حقير",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "اقذر خلق",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "قذرين",
+      "lang": "ar",
+      "severity": "low",
+      "category": "profanity"
+    },
+    {
+      "term": "نجس",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "نجسه",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "داعر",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "عاهر",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "عاهرة",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "شرموط",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "شرموطة",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "زانية",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "زاني",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "قحبة",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "منيوك",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "نيك",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "زبي",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "قحاب",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "زامل",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "بوسبير",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "خنزير",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "خنازير",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "قردة",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "يا كلاب",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "ابن الزنا",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "ابن الحرام",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "ولد الحرام",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "ولد القحبة",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "يا عرص",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "عرص",
+      "lang": "ar",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "متخلف عقليا",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "منغولي",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "معاق ذهنيا",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "اذبحهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "اذبحوهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "اقتلوهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "اقتلهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "اقضي عليهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "ابادهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "إبادتهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "حرقوهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "يستحق الذبح",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "يستحق القتل",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "لازم نقتلهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "يجب قتلهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "موتوا",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "الموت لهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "سأقتلك",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "راح نقتلك",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "ندبحك",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "nigger",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "nigga",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "faggot",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "fag",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "kike",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "chink",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "spic",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "wetback",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "raghead",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "towelhead",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "sand nigger",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "white trash",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "subhuman",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "sub-human",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "vermin",
+      "lang": "en",
+      "severity": "low",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "cockroaches",
+      "lang": "en",
+      "severity": "low",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "kill them all",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "kill all",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "exterminate",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "gas the",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "i will kill you",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "gonna kill you",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "death to",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "retard",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "retarded",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "tranny",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "whore",
+      "lang": "en",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "slut",
+      "lang": "en",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "cunt",
+      "lang": "en",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "motherfucker",
+      "lang": "en",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "son of a bitch",
+      "lang": "en",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "go to hell",
+      "lang": "en",
+      "severity": "low",
+      "category": "profanity"
+    },
+    {
+      "term": "macaco",
+      "lang": "pt",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "crioulo",
+      "lang": "pt",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "viado",
+      "lang": "pt",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "bicha",
+      "lang": "pt",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "traveco",
+      "lang": "pt",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "vadia",
+      "lang": "pt",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "puta",
+      "lang": "pt",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "vagabunda",
+      "lang": "pt",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "filho da puta",
+      "lang": "pt",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "retardado",
+      "lang": "pt",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "mata eles",
+      "lang": "pt",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "matar todos",
+      "lang": "pt",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "morte aos",
+      "lang": "pt",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "vou te matar",
+      "lang": "pt",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "nègre",
+      "lang": "fr",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "bougnoule",
+      "lang": "fr",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "pédé",
+      "lang": "fr",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "salope",
+      "lang": "fr",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "pute",
+      "lang": "fr",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "fils de pute",
+      "lang": "fr",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "attardé",
+      "lang": "fr",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "tuez-les",
+      "lang": "fr",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "mort aux",
+      "lang": "fr",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "je vais te tuer",
+      "lang": "fr",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "maricón",
+      "lang": "es",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "puta",
+      "lang": "es",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "hijo de puta",
+      "lang": "es",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "retrasado",
+      "lang": "es",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "mátalos",
+      "lang": "es",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "muerte a los",
+      "lang": "es",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "te voy a matar",
+      "lang": "es",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "orospu",
+      "lang": "tr",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "piç",
+      "lang": "tr",
+      "severity": "high",
+      "category": "profanity"
+    },
+    {
+      "term": "ibne",
+      "lang": "tr",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "öldüreceğim",
+      "lang": "tr",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "seni öldüreceğim",
+      "lang": "tr",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "geber",
+      "lang": "tr",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "أيها النجس",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "نجس",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "يا زبالة",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "اقتلوهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "احرقوهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "اذبحوهم",
+      "lang": "ar",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "حشرات",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "صراصير",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "قرود",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_slur"
+    },
+    {
+      "term": "يا حقير",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "harassment"
+    },
+    {
+      "term": "الله يلعن",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "profanity"
+    },
+    {
+      "term": "سلالة حقيرة",
+      "lang": "ar",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "أوساخ",
+      "lang": "ar",
+      "severity": "medium",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "exterminate them",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "kill them all",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "burn them alive",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "subhuman",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "vermin",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "cockroaches",
+      "lang": "en",
+      "severity": "medium",
+      "category": "hate_dehumanize"
+    },
+    {
+      "term": "disgusting race",
+      "lang": "en",
+      "severity": "high",
+      "category": "hate_slur"
+    },
+    {
+      "term": "hanging them",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    },
+    {
+      "term": "shoot them all",
+      "lang": "en",
+      "severity": "high",
+      "category": "violence_threat"
+    }
+  ]
+}

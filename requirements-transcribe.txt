@@ -1,0 +1,22 @@
+# ViralCutter — transcription stack (REQUIRED for the full viral pipeline)
+#
+# Install with:  pip install -r requirements-transcribe.txt
+# (or let install_linux.sh / install_macos.sh do it for you)
+#
+# GPU (recommended): first install a CUDA build of torch, e.g.:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+# then this file (whisperx will reuse that torch):
+#   pip install -r requirements-transcribe.txt
+#
+# CPU-only fallback: works but is slow on long videos:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-transcribe.txt
+
+# whisperx pulls in torch automatically on PyPI (CPU wheel by default);
+# install the CUDA torch first (see above) for GPU transcription.
+whisperx
+torch
+torchaudio
+huggingface-hub>=0.34.0,<1.0
+
+numpy<2  # whisperx/pyannote.audio require NumPy 1.x (np.NaN removed in 2.0)

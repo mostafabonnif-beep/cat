@@ -1,0 +1,113 @@
+# ViralCutter — modern packaging metadata (additive; the classic
+# requirements.txt flow keeps working unchanged).
+#
+# Core dependencies mirror requirements.txt. The heavy AI stacks stay opt-in
+# extras because they are environment-specific:
+#   * transcribe (whisperx/torch) — GPU vs CPU wheel choice must stay manual
+#     (see requirements-transcribe.txt / install_dependencies.bat).
+#   * upload (YouTube OAuth) — needed only for direct uploads.
+#
+# Reproducible install of the CORE app:   uv sync
+# Classic install (GPU wizard on Windows): install_dependencies.bat
+
+[project]
+name = "oussama-cutter"
+# PEP 440-compatible distribution version; the UI displays 7.5.0-pro.
+version = "7.5.0+pro"
+description = "OUSSAMA Cutter — استوديو عربي احترافي لتحويل الفيديوهات الطويلة إلى مقاطع قصيرة مع المونتاج الذكي والترجمة والأمان قبل النشر."
+readme = "README.md"
+requires-python = ">=3.9,<3.13"
+license = { text = "GPL-3.0" }
+dependencies = [
+    "numpy<2",
+    "g4f[all]",
+    "yt-dlp",
+    "ffmpeg-python",
+    "mediapipe",
+    "google-genai",
+    "google-generativeai",
+    "insightface",
+    "gradio",
+    "opencv-python",
+    "psutil",
+    "fastapi",
+    "uvicorn",
+    "deep-translator",
+    "tqdm",
+    # <1.24: 1.24+ dropped Python 3.10 wheels (project supports 3.10-3.12)
+    "onnxruntime<1.24",
+    "cryptography",
+]
+
+[project.scripts]
+oussama-cutter = "main_improved:main"
+oussama-cutter-webui = "webui.app:_launch"
+oussama-cutter-report = "scripts.project_report:main"
+# Compatibility aliases for existing installations and scripts.
+viralcutter = "main_improved:main"
+viralcutter-webui = "webui.app:_launch"
+viralcutter-report = "scripts.project_report:main"
+
+[project.optional-dependencies]
+transcribe = [
+    "whisperx",
+    "torch",
+    "torchaudio",
+    "numpy<2",
+]
+upload = [
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
+    "pyacoustid",
+]
+dev = [
+    "pytest>=8.0",
+    "numpy<2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main_improved", "app_version", "app_brand"]
+packages = ["scripts", "webui", "i18n"]
+
+[tool.ruff]
+target-version = "py39"
+exclude = [".venv", "build", "dist", "models", "VIRALS", ".gradio", "*.ipynb"]
+
+[tool.ruff.lint]
+# Pragmatic quality gate: real bugs (F), bugbear patterns (B), imports (I),
+# pycodestyle basics (E). Style-modernization lints (f-strings everywhere)
+# would churn thousands of lines for zero runtime value — not selected.
+select = ["E", "F", "I", "B"]
+# Documented intentional ignores:
+#   E501 — long lines are a deliberate style in this codebase.
+#   E701 — one-line `if x: y` blocks are used throughout.
+#   E722 — bare except is the project's defensive resilience pattern
+#          (fallbacks must never crash the app; see v6.7b).
+ignore = ["E501", "E701", "E722"]
+
+[tool.ruff.lint.per-file-ignores]
+# Env/bootstrap imports must stay before heavy library imports (main_improved
+# sets env vars before importing cv2/torch stacks).
+"main_improved.py" = ["E402"]
+"webui/app.py" = ["E402"]
+"webui/pipeline.py" = ["E402"]
+# webui modules add their own dir to sys.path before importing i18n/etc.
+"webui/header.py" = ["E402"]
+"webui/library.py" = ["E402"]
+"webui/subtitle_handler.py" = ["E402"]
+# Test files may import fixtures after module-level setup.
+"tests/*" = ["E402"]
+
+[tool.coverage.run]
+branch = true
+source = ["scripts", "webui", "main_improved.py", "app_version.py"]
+omit = ["*/export_xml_lib/*", "*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
