@@ -1,0 +1,5 @@
+mkdir -p .github/workflows
+cp .github/workflows.disabled/*.yml .github/workflows/
+git add .github/workflows
+git commit -m "Enable GitHub Actions workflows"
+git push
