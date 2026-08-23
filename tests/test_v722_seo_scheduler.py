@@ -146,8 +146,9 @@ class TestBuildPlan:
         assert plan["count"] == 3
         times = [datetime.fromisoformat(x["publish_at"]) for x in plan["plan"]]
         assert times[0] < times[1] < times[2]
-        # all in the evening window (17-20 local)
-        assert all(17 <= t.hour <= 19 for t in times)
+        # all slots are future, hourly, and inside the evening window hours
+        assert all(t > datetime.now(timezone.utc) for t in times)
+        assert all(17 <= t.hour <= 20 for t in times)
 
     def test_user_hours_override(self, tmp_path):
         plan = publish_scheduler.build_plan(

@@ -203,7 +203,7 @@ def _clear_downstream_artifacts(project_folder):
     return removed
 
 
-def cut(response, project_folder="tmp", skip_video=False, workers=None, source_video=None, force=False):
+def cut(response, project_folder="tmp", skip_video=False, workers=None, source_video=None, force=False, scene_snap=False):
     def generate_segments(response, project_folder, skip_video, workers, source_video):
         input_file = os.path.abspath(source_video) if source_video else os.path.join(project_folder, "input.mp4")
         if not os.path.exists(input_file):
@@ -223,6 +223,33 @@ def cut(response, project_folder="tmp", skip_video=False, workers=None, source_v
         segments_list = response.get("segments", [])
         if not segments_list:
             raise ValueError("No safe segments to process.")
+
+        # v7.23: optional scene-aware snapping — detect shot boundaries once
+        # and snap every segment's edges to the nearest scene change, so cuts
+        # land on clean boundaries instead of mid-shot.
+        scene_boundaries = []
+        if scene_snap:
+            try:
+                from scripts.scene_detect import find_scene_cuts, snap_to_scene
+                scene_boundaries = find_scene_cuts(input_file)
+                if scene_boundaries:
+                    print("[cut] scene detection: {} boundaries — snapping cuts".format(
+                        len(scene_boundaries)))
+                    snapped = 0
+                    for seg in segments_list:
+                        try:
+                            s0 = float(seg.get("start_time", 0))
+                            s1 = float(seg.get("end_time", s0))
+                        except (TypeError, ValueError):
+                            continue
+                        new_s0, new_s1 = snap_to_scene(s0, s1, scene_boundaries)
+                        if (new_s0, new_s1) != (s0, s1):
+                            seg["start_time"], seg["end_time"] = new_s0, new_s1
+                            seg["scene_snapped"] = True
+                            snapped += 1
+                    print("[cut] snapped {} segment(s) to scene boundaries".format(snapped))
+            except Exception as exc:
+                print("[cut] scene detection skipped: {}".format(exc))
 
         if not skip_video:
             # A rerun must reflect the current safe segment list, not stale cuts
@@ -306,3 +333,5 @@ def cut(response, project_folder="tmp", skip_video=False, workers=None, source_v
             response = json.load(file)
 
     generate_segments(response, project_folder, skip_video, workers, source_video)
+    if scene_snap:
+        print("[cut] scene-aware cutting enabled (scene_snap=True)")

@@ -624,6 +624,8 @@ def main():
                         help="Path to a Netscape-format cookies.txt file exported for yt-dlp (alternative to --cookies-from-browser)")
     parser.add_argument("--sponsorblock", default=None,
                         help="Remove in-video sponsor segments at download time using SponsorBlock (comma-separated categories: sponsor,intro,outro,selfpromo,interaction,music_offtopic — or 'all'). Makes cuts cleaner and avoids ad content in clips.")
+    parser.add_argument("--scene-snap", action="store_true",
+                        help="v7.23: snap cut points to detected shot boundaries (PySceneDetect when installed, OpenCV fallback) so clips never cut mid-shot")
     parser.add_argument("--live-wait", type=float, default=None, metavar="MINUTES",
                         help="v7.20: if the URL is a live stream / premiere (e.g. https://youtube.com/live/ID), wait up to this many minutes for it to END, then download the resulting VOD automatically.")
     parser.add_argument("--title-language", default="auto",
@@ -1342,7 +1344,8 @@ def main():
                         project_folder=project_folder, skip_video=skip_cutting,
                         workers=args.workers,
                         source_video=input_video,
-                        force=not skip_cutting)
+                        force=not skip_cutting,
+                        scene_snap=getattr(args, "scene_snap", False))
             if not skip_cutting:
                 manifest_tmp = cut_manifest_path + ".tmp"
                 with open(manifest_tmp, "w", encoding="utf-8") as manifest_stream:

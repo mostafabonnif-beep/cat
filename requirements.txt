@@ -23,3 +23,7 @@ tqdm
 #   - auto-update builds: pip install pyinstaller  (see packaging/)
 onnxruntime
 cryptography
+
+# v7.23: thumbnail generator (Pillow) + scene detection (PySceneDetect, BSD-3)
+Pillow
+scenedetect
