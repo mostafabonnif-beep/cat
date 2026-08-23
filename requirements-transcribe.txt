@@ -17,6 +17,6 @@
 whisperx
 torch
 torchaudio
-huggingface-hub>=0.34.0,<1.0
+huggingface-hub>=1.28.0,<2.0
 
 numpy<2  # whisperx/pyannote.audio require NumPy 1.x (np.NaN removed in 2.0)
