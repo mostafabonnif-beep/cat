@@ -268,12 +268,61 @@ def _cell(value: Any) -> str:
     return html.escape(str(value if value is not None else "—"))
 
 
+def _tracking_rows(tracking: Dict[str, Any]) -> str:
+    if not tracking.get("present"):
+        return ""
+    items = [
+        ("الخلفية (Backend)", tracking.get("backend")),
+        ("المتحدث النشط مطلوب", tracking.get("requested_active_speaker")),
+        ("المتحدث النشط طُبّق", tracking.get("active_speaker_applied")),
+        ("تمليس الكاميرا (Smoothing)", tracking.get("smoothing")),
+        ("Headroom", tracking.get("headroom")),
+        ("تحذير", tracking.get("warning")),
+    ]
+    rows = "".join(
+        "<tr><td>{}</td><td>{}</td></tr>".format(_cell(k), _cell(v))
+        for k, v in items if v is not None)
+    return "<div class='card'><h2>التتبع (Tracking)</h2><table>{}</table></div>".format(rows)
+
+
+def _originality_rows(report: Dict[str, Any]) -> str:
+    content_guard = report.get("content_guard", {}) or {}
+    channel = content_guard.get("channel", {}) or {}
+    rows = [
+        ("مقاطع محجوبة تلقائياً", content_guard.get("blocked")),
+        ("مقاطع مُبقاة", content_guard.get("kept")),
+        ("حالة القناة (قاطع الدائرة)", "مقفول" if channel.get("locked") else "مفتوح"),
+        ("حوادث مسجلة", channel.get("count")),
+    ]
+    table = "".join("<tr><td>{}</td><td>{}</td></tr>".format(_cell(k), _cell(v)) for k, v in rows)
+    return "<div class='card'><h2>حماية المحتوى المكرر (Originality)</h2><table>{}</table></div>".format(table)
+
+
+def _publishing_rows(report: Dict[str, Any]) -> str:
+    publishing = report.get("publishing", {}) or {}
+    history = publishing.get("history", {}) or {}
+    last_batch = publishing.get("last_batch", {}) or {}
+    items = [
+        ("نجاحات النشر", history.get("successful")),
+        ("إخفاقات النشر", history.get("failed")),
+        ("محجوبة قبل الرفع", history.get("blocked")),
+        ("آخر دفعة — نجحت", last_batch.get("uploaded")),
+        ("آخر دفعة — فشلت", last_batch.get("failed")),
+        ("آخر دفعة — محجوبة", last_batch.get("blocked")),
+    ]
+    rows = "".join(
+        "<tr><td>{}</td><td>{}</td></tr>".format(_cell(k), _cell(v))
+        for k, v in items if v is not None)
+    return "<div class='card'><h2>النشر (Publishing)</h2><table>{}</table></div>".format(rows)
+
+
 def render_html(report: Dict[str, Any]) -> str:
     project = report.get("project", {})
     readiness = report.get("readiness", {})
     safety = report.get("safety", {})
     media = report.get("media", {})
     risk = report.get("risk", {})
+    tracking = report.get("tracking", {}) or {}
     status = "جاهز للنشر" if readiness.get("ready_for_publish") else "يتطلب مراجعة"
     error_rows = "".join("<li>{}</li>".format(_cell(error)) for error in readiness.get("errors", []))
     media_rows = "".join(
@@ -291,6 +340,9 @@ def render_html(report: Dict[str, Any]) -> str:
 <div class="card"><h2>ملخص السلامة والمخاطر</h2><table><tr><th>البند</th><th>القيمة</th></tr><tr><td>مقاطع السلامة المفحوصة</td><td>{safety_total}</td></tr><tr><td>محجوبة</td><td>{blocked}</td></tr><tr><td>تحتاج مراجعة يدوية</td><td>{review}</td></tr><tr><td>حظر بطاقة المخاطر</td><td>{risk_blocked}</td></tr></table></div>
 <div class="card"><h2>الملفات النهائية</h2><p>الإجمالي: {media_count} — الصالح: {media_valid} — غير الصالح: {media_invalid}</p><table><tr><th>الملف</th><th>المدة</th><th>صالح</th><th>الملاحظات</th></tr>{media_rows}</table></div>
 <div class="card"><h2>المشكلات التي تمنع النشر</h2><ul>{errors}</ul></div>
+{tracking_html}
+{originality_html}
+{publishing_html}
 </body></html>""".format(
         cls="ok" if readiness.get("ready_for_publish") else "bad",
         status=_cell(status), project=_cell(project.get("path")),
@@ -300,6 +352,9 @@ def render_html(report: Dict[str, Any]) -> str:
         media_valid=_cell(media.get("valid", 0)), media_invalid=_cell(media.get("invalid", 0)),
         media_rows=media_rows or "<tr><td colspan='4'>لا توجد ملفات نهائية</td></tr>",
         errors=error_rows or "<li class='ok'>لا توجد مشكلات مسجلة</li>",
+        tracking_html=_tracking_rows(tracking),
+        originality_html=_originality_rows(report),
+        publishing_html=_publishing_rows(report),
     )
 
 
