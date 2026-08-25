@@ -120,13 +120,11 @@ def check_policy_pages(base_dir=None, force=False):
     changes = []
     markers = {}
     fresh_hashes = {}
-    offline = False
 
     for key, url in POLICY_PAGES.items():
         try:
             html = _fetch_text(url)
         except Exception:
-            offline = True
             continue
         digest = _page_hash(html)
         fresh_hashes[key] = digest

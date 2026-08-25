@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-572%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-839%20passed-brightgreen)](tests/)
 
 **البديل المفتوح المصدر المجاني 100% لـ Opus Clip — يعمل محلياً وبلا حدود**
 حوّل فيديوهات يوتيوب الطويلة إلى مقاطع قصيرة فيروسية جاهزة لـ TikTok وInstagram Reels وYouTube Shorts — بذكاء اصطناعي متقدم، وترجمات ديناميكية، وتتبع دقيق للوجه، وترجمة تلقائية. كل شيء يعمل على جهازك.
@@ -61,6 +61,12 @@ $env:VIRALCUTTER_LANG="en_US"; python webui/app.py
 ```
 
 اللغات المتاحة: `ar_SA` (العربية)، `en_US` (الإنجليزية)، `pt_BR` (البرتغالية)، `tr_TR` (التركية).
+
+## مركز التحكم عبر Telegram
+
+يمكن تفعيل مركز Telegram اختيارياً للتحكم في **طابور المعالجة المحلي** أثناء بقاء OUSSAMA Cutter مفتوحاً. يعمل الاتصال من Windows عبر long polling دون webhook أو منفذ عام، وتبقى الفيديوهات وملفات `VIRALS` وOAuth على الجهاز. لا يقبل البوت Bot Token أو `client_secrets.json` أو ملفات أو أوامر shell، ولا ينفذ `/upload` أو `/publish`.
+
+الإعداد env-only: أنشئ Bot من [@BotFather](https://telegram.me/BotFather)، ثم انسخ `telegram_control.example.ps1` إلى `telegram_control.local.ps1` خارج Git وZIP وشغّله محلياً. لا تضع Token في README أو GitHub أو المحادثة. راجع [دليل Telegram العربي](docs/TELEGRAM_CONTROL_AR.md) و[قائمة قبول Windows](docs/RELEASE_CHECKLIST_WINDOWS.md) للأوامر والاختبارات والاستكشاف.
 
 ## 🪟 التثبيت على ويندوز (خطوة بخطوة)
 

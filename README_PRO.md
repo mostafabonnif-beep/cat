@@ -1,4 +1,4 @@
-# OUSSAMA Cutter 7.18.0-pro
+# OUSSAMA Cutter 7.24.0-pro
 
 This build is based on the uploaded ViralCutter source and includes a
 production-oriented reliability layer.
@@ -10,6 +10,7 @@ production-oriented reliability layer.
 - `scripts/pipeline_engine.py`
 - `webui/editor_core.py`
 - `webui/render_queue.py`
+- `webui/telegram_control.py` (optional local Telegram queue control)
 
 ## Security
 - API keys are not put in WebUI child-process argv.

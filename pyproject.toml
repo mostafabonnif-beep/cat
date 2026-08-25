@@ -12,8 +12,8 @@
 
 [project]
 name = "oussama-cutter"
-# PEP 440-compatible distribution version; the UI displays 7.18.0-pro.
-version = "7.18.0+pro"
+# PEP 440-compatible distribution version; the UI displays 7.24.0-pro.
+version = "7.24.0+pro"
 description = "OUSSAMA Cutter — استوديو عربي احترافي لتحويل الفيديوهات الطويلة إلى مقاطع قصيرة مع المونتاج الذكي والترجمة والأمان قبل النشر."
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
@@ -34,6 +34,7 @@ dependencies = [
     "uvicorn",
     "deep-translator",
     "tqdm",
+    "requests>=2.31,<3",
     # <1.24: 1.24+ dropped Python 3.10 wheels (project supports 3.10-3.12)
     "onnxruntime<1.24",  # 1.24+ drops py3.10 wheels (matches requirements.txt)
     "cryptography",

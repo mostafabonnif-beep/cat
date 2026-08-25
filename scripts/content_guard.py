@@ -186,7 +186,7 @@ def _record_key(platform: str, fingerprint: str | None, source: str | None,
 def _visual_fingerprint_for(video_path):
     """Best-effort perceptual fingerprint of a rendered clip (v7.18)."""
     try:
-        from scripts.originality import video_fingerprint, fingerprint_key
+        from scripts.originality import fingerprint_key, video_fingerprint
         hashes = video_fingerprint(video_path)
         key = fingerprint_key(hashes)
         if hashes and key:

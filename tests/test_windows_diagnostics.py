@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from scripts.windows_diagnostics import collect, render
+from scripts.windows_diagnostics import _telegram_check, collect, render
 
 
 def test_windows_diagnostics_is_json_serializable(tmp_path):
@@ -26,3 +26,16 @@ def test_windows_diagnostics_does_not_modify_root(tmp_path):
     collect(tmp_path)
     after = sorted(path.name for path in tmp_path.iterdir())
     assert before == after
+
+
+def test_windows_telegram_check_is_optional_and_secret_free():
+    token = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"
+    result = _telegram_check({
+        "VIRALCUTTER_TELEGRAM_ENABLED": "on",
+        "VIRALCUTTER_TELEGRAM_BOT_TOKEN": token,
+        "VIRALCUTTER_TELEGRAM_CHAT_IDS": "100, 200",
+    })
+    assert result["status"] == "ok"
+    assert result["critical"] is False
+    assert "2 allowlisted" in result["detail"]
+    assert token not in result["detail"]

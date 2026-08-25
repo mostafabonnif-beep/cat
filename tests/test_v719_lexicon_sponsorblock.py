@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts import arabic_lexicon_importer as importer
+from scripts import arabic_lexicon_importer as importer  # noqa: I001
 
 
 SAMPLE_MD = """# Lexicon
@@ -95,7 +95,7 @@ class TestBlocklistIntegration:
         from scripts import safety_filter as sf
         index = sf._build_index()
         benign = "هذا ولد يلعب بكرة في الحديقة مع كلبه الصغير"
-        matches = sf.find_matches(sf.normalize_text(benign), index=index)
+        sf.find_matches(sf.normalize_text(benign), index=index)
         # "كلب" is in the blocklist, but here it's a benign pet reference;
         # allow_terms must be able to exclude it — verify no crash and the
         # allow mechanism works.
@@ -116,8 +116,9 @@ class TestBlocklistIntegration:
 
 class TestSponsorBlockWiring:
     def test_download_accepts_sponsorblock(self):
-        from scripts import download_video
         import inspect
+
+        from scripts import download_video
         params = inspect.signature(download_video.download).parameters
         assert "sponsorblock" in params
 
@@ -131,7 +132,6 @@ class TestSponsorBlockWiring:
         assert "sponsor,intro" in cmd
 
     def test_main_parser_has_flag(self):
-        import subprocess
         code = open(os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "main_improved.py"), encoding="utf-8").read()
         assert '"--sponsorblock"' in code
@@ -152,8 +152,8 @@ class TestCIScripts:
             assert isinstance(data, dict) and data.get("jobs")
 
     def test_ci_helper_imports(self):
-        from scripts.github_policy_watch_ci import main as policy_main
         from scripts.github_lexicon_ci import main as lexicon_main
+        from scripts.github_policy_watch_ci import main as policy_main
         assert callable(policy_main) and callable(lexicon_main)
 
     def test_policy_ci_emits_outputs(self, monkeypatch, tmp_path):

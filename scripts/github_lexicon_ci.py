@@ -11,7 +11,6 @@ stays simple and parse-safe.
 import hashlib
 import json
 import os
-import sys
 import urllib.request
 
 UPSTREAM_URL = ("https://raw.githubusercontent.com/"

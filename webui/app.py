@@ -1,3 +1,4 @@
+import atexit
 import base64
 import datetime
 import html as html_lib
@@ -26,6 +27,7 @@ try:
         segments_review,
         settings_store,
         style,
+        telegram_control,
     )
     from . import subtitle_editor as editor
     from . import subtitle_handler as subs
@@ -45,6 +47,7 @@ except ImportError:
     import style  # Learn (strike feedback) & Performance (analytics) panels
     import subtitle_editor as editor  # Module for Editor Logic
     import subtitle_handler as subs  # Module for Subtitles
+    import telegram_control  # Optional local Telegram queue control
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -285,6 +288,26 @@ def _project_path_for_name(project_name):
 # Global variables
 current_process = None
 current_batch_job_ids = []
+telegram_service = None
+
+
+def _start_telegram_control():
+    """Start the opt-in local Telegram control plane once per WebUI process."""
+    global telegram_service
+    if telegram_service is not None:
+        return telegram_service
+    try:
+        telegram_service = telegram_control.start_from_environment(
+            batch_render_queue,
+            project_root=VIRALS_DIR,
+        )
+    except Exception as exc:
+        # Telegram is optional; a bad token or offline API must not break WebUI.
+        print("[telegram] disabled after startup error: {}".format(str(exc)[:500]))
+        telegram_service = None
+    if telegram_service is not None:
+        atexit.register(telegram_service.stop)
+    return telegram_service
 
 try:
     from .pipeline import build_command
@@ -1340,7 +1363,15 @@ with gr.Blocks(**_blocks_kwargs) as demo:
             with gr.Row():
                 home_status_html = gr.HTML(value=header.env_status_html(), scale=6)
                 home_check_btn = gr.Button("🔄 " + i18n("Re-check system"), size="sm", scale=1)
-            home_check_btn.click(lambda: header.env_status_html(force=True), outputs=home_status_html)
+            telegram_status_html = gr.HTML(value=telegram_control.status_html())
+
+            def refresh_home_status():
+                return header.env_status_html(force=True), telegram_control.status_html()
+
+            home_check_btn.click(
+                refresh_home_status,
+                outputs=[home_status_html, telegram_status_html],
+            )
 
         with gr.Tab("📥 " + i18n("Create New")):
             with gr.Row(elem_id="vc-create-toolbar", elem_classes=["vc-create-toolbar"]):
@@ -3221,6 +3252,7 @@ def _launch(argv=None):
     def _start_safety_watcher():
         try:
             import threading
+
             from scripts import safety_updater  # needed both by _cycle and watch thread
             from scripts.youtube_policy_watch import check_policy_pages
 
@@ -3265,6 +3297,7 @@ def _launch(argv=None):
         except Exception as e:
             print("[preflight] check skipped ({}).".format(e))
 
+    _start_telegram_control()
 
     if args.colab:
         print("Running in Colab mode. Generating public link with Static Mounts...")

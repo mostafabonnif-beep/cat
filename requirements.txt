@@ -14,6 +14,7 @@ fastapi
 uvicorn
 deep-translator
 tqdm
+requests>=2.31,<3
 
 # Optional: install whisperx manually if you want the advanced transcription path.
 

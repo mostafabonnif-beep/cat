@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 from collections import OrderedDict
 
 # en_US is the canonical reference locale (the app falls back to it at

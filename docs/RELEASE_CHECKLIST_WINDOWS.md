@@ -1,4 +1,4 @@
-# قائمة إصدار Windows — OUSSAMA Cutter 7.17.0-pro
+# قائمة إصدار Windows — OUSSAMA Cutter 7.24.0-pro
 
 > هذه القائمة تفصل بين ما يمكن اختباره آلياً على خادم Linux وما يجب اختباره على جهاز Windows الحقيقي. لا ترسل مفاتيح Gemini أو `client_secrets.json` أو `token.json` عند طلب المساعدة.
 
@@ -23,7 +23,7 @@ cd D:\SS
 ## 2. تشخيص قابل للإرسال
 
 ```powershell
-.\.venv\Scripts\python.exe -m scripts.windows_diagnostics --json-out windows_diagnostics.json
+.\.venv\Scripts\python.exe -m scripts.windows_diagnostics --json --output windows_diagnostics.json
 Get-Content .\windows_diagnostics.json
 ```
 
@@ -58,6 +58,9 @@ Get-Content .\windows_diagnostics.json
 | سلامة إعادة القص | وجود `cuts_manifest.json` مطابق لقائمة المقاطع، وعدم بقاء ملفات final أو polish قديمة عند تغيير القائمة |
 | فشل القص | تجربة segment فاشل توقف المرحلة ولا تنتج رسالة نجاح أو ترفع دفعة ناقصة |
 | حالة الطابور التالفة | عند تلف `.batch_queue.json` تُحفظ نسخة `queue.json.corrupt-*` ويظهر تحذير في ملخص الطابور |
+| Telegram Control Center | عند تركه معطلاً لا يبدأ polling؛ وعند تفعيله تظهر بطاقة ready وعدد Chat IDs فقط، ولا يظهر Token |
+| أوامر Telegram | `/status` و`/projects` و`/audit` وpause/resume/retry/cancel تعمل للطابور المحلي فقط؛ الإلغاء الجماعي يحتاج تأكيداً خلال 60 ثانية |
+| إشعارات Telegram | تبقى معطلة افتراضياً؛ عند تفعيلها يصل status قصير للمهام الجديدة فقط دون ملفات أو مسارات أو logs |
 
 ## 4. اختبار معالجة محلية آمنة
 
@@ -77,12 +80,18 @@ Get-Content .\windows_diagnostics.json
 
 لا يكرر البرنامج تلقائياً أخطاء 401 أو 403. أما 429 و500 و502 و503 و504 فلها محاولات محدودة بانتظار متزايد. إذا استمرت المشكلة، افحص الحصة والصلاحيات والاتصال بدلاً من تكرار الطلبات بسرعة.
 
-## 7. النسخ الاحتياطي والتحديث
+## 7. Telegram محلياً دون تعريض الجهاز
+
+أنشئ Bot من [@BotFather](https://telegram.me/BotFather) على حسابك أنت، ثم انسخ `telegram_control.example.ps1` إلى `telegram_control.local.ps1` خارج Git وZIP وشغّله من `D:\SS`. خزّن Token وChat IDs في User Environment على Windows فقط، ولا ترسلهما في هذه المحادثة أو الدعم. أرسل `/help` للبوت من المحادثة المسموح بها، ثم تحقق من بطاقة Telegram في WebUI ومن `scripts.windows_diagnostics`.
+
+يجب أن يكون OUSSAMA Cutter مفتوحاً حتى يعمل polling. لا يوجد webhook أو منفذ عام، ولا يقبل البوت `client_secrets.json` أو OAuth tokens أو ملفات أو أوامر shell، ولا ينفذ `/upload` أو `/publish`. نفّذ اختبار Telegram بالمحاكاة في Linux، والاختبار الواقعي برسالة واحدة من جهاز Windows بعد مراجعة allowlist. إذا اشتبهت بتسرب Token، ألغِه من BotFather وولّد Token جديداً قبل إعادة التشغيل.
+
+## 8. النسخ الاحتياطي والتحديث
 
 أنشئ نسخة من المكتبة قبل أي تحديث. افحص ZIP وتأكد من عدم وجود `token.json` أو `client_secrets.json` أو cache أو `.pyc`. الاستعادة تنشئ مشروعاً جديداً ولا تكتب فوق المشروع الأصلي.
 
 لا تطبق تحديثاً على جهاز الإنتاج قبل الاحتفاظ بالنسخة السابقة وقراءة release notes. التحديث التلقائي لا ينبغي أن يشغل OAuth أو يرفع ملفات من تلقاء نفسه.
 
-## 8. نتيجة القبول
+## 9. نتيجة القبول
 
 يُعتبر تثبيت Windows مقبولاً عندما ينجح التشخيص، وتظهر CUDA فعلياً على RTX 3060 أو يظهر CPU كخيار صريح، وتعمل معالجة محلية قصيرة، ويعمل preflight قبل القص، ويُنشأ `polish_report.json` و`tracking_report.json` صالحان، ولا توجد نوافذ مصدر مكررة في `viral_segments.txt`, ويعمل Dry Run على كل الملفات، وتُحفظ أوقات جدولة مستقلة لأكثر من خمسة مقاطع، ويُنشأ backup آمن، ولا تظهر أخطاء batch من نوع `was unexpected` أو `not recognized` أو مسارات cache غير مقصودة على `C:`.

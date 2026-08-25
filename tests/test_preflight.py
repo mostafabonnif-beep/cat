@@ -350,3 +350,33 @@ def test_run_preflight_ensure_upload_repairs_warning_only(monkeypatch):
     monkeypatch.setattr(preflight, "collect_checks", fake_collect)
     assert preflight.run_preflight(mode="auto-fix", quiet=True, ensure_upload=True) == 0
     assert calls == ["requirements-upload.txt"]
+
+
+def test_check_telegram_config_disabled():
+    result = preflight.check_telegram_config({})
+    assert result["status"] == preflight.WARN
+    assert "disabled" in result["detail"]
+
+
+def test_check_telegram_config_ready_hides_token():
+    token = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"
+    result = preflight.check_telegram_config({
+        "VIRALCUTTER_TELEGRAM_ENABLED": "1",
+        "VIRALCUTTER_TELEGRAM_BOT_TOKEN": token,
+        "VIRALCUTTER_TELEGRAM_CHAT_IDS": "100 200, invalid",
+    })
+    assert result["status"] == preflight.OK
+    assert "2 allowlisted" in result["detail"]
+    assert token not in result["detail"]
+
+
+def test_check_telegram_config_missing_allowlist_hides_token():
+    token = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"
+    result = preflight.check_telegram_config({
+        "VIRALCUTTER_TELEGRAM_ENABLED": "true",
+        "VIRALCUTTER_TELEGRAM_BOT_TOKEN": token,
+        "VIRALCUTTER_TELEGRAM_CHAT_IDS": "../demo abc",
+    })
+    assert result["status"] == preflight.WARN
+    assert "Chat ID" in result["detail"]
+    assert token not in result["detail"]

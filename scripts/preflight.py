@@ -29,6 +29,7 @@ import importlib.metadata as _pkg_meta
 import importlib.util as _iu
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -331,6 +332,30 @@ def check_models_dir():
                 "detail": "empty - local GGUF models go here (optional; cloud AI works without them)"}
     return {"name": "models/", "status": WARN, "detail": "missing - will be created (optional)"}
 
+
+def check_telegram_config(environ=None):
+    """Check optional local Telegram settings without importing the WebUI."""
+    env = environ if environ is not None else os.environ
+    enabled = str(env.get("VIRALCUTTER_TELEGRAM_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return {"name": "Telegram Control", "status": WARN,
+                "detail": "disabled - no local polling will start"}
+    token = str(env.get("VIRALCUTTER_TELEGRAM_BOT_TOKEN", "") or "").strip()
+    raw_ids = str(env.get("VIRALCUTTER_TELEGRAM_CHAT_IDS", "") or "")
+    values = [item for item in re.split(r"[\s,;]+", raw_ids.strip()) if item]
+    chat_ids = {item for item in values if re.fullmatch(r"-?\d+", item)}
+    if not token:
+        return {"name": "Telegram Control", "status": WARN,
+                "detail": "enabled but bot token is missing (value is never shown)"}
+    if not chat_ids:
+        return {"name": "Telegram Control", "status": WARN,
+                "detail": "enabled but no valid allowlisted Chat ID is configured"}
+    if not re.fullmatch(r"\d{6,}:[A-Za-z0-9_-]{20,}", token):
+        return {"name": "Telegram Control", "status": WARN,
+                "detail": "enabled with a token whose format could not be validated"}
+    return {"name": "Telegram Control", "status": OK,
+            "detail": "ready; local long polling; %d allowlisted Chat ID(s)" % len(chat_ids)}
+
 # --------------------------------------------------------------------------
 # Repair actions
 # --------------------------------------------------------------------------
@@ -434,7 +459,7 @@ def collect_checks():
         checks.append(bundled)
     checks += [check_disk_space(_app_dir()),
                check_writable(_app_dir(), "Working dir writable")]
-    checks += [check_api_config(), check_assets(), check_models_dir()]
+    checks += [check_api_config(), check_assets(), check_models_dir(), check_telegram_config()]
 
     # dependency checks per requirements file
     for req_file, (_label, _optional, _hint) in REQ_FILES.items():

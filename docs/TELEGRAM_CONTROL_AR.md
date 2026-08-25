@@ -1,0 +1,131 @@
+# مركز التحكم في OUSSAMA Cutter عبر Telegram
+
+## الغرض والنطاق
+
+أضيف إلى **OUSSAMA Cutter** مركز تحكم اختياري يسمح بمراقبة طابور المعالجة المحلي من Telegram عندما يكون التطبيق مفتوحاً على جهاز Windows. المعالجة، ملفات الفيديو، التقارير، وبيانات OAuth تبقى على الجهاز المحلي؛ لا تُرفع ملفات المشروع إلى Telegram ولا إلى خدمة وسيطة.
+
+> **قاعدة الأمان الأساسية:** Telegram وسيلة تحكم ومراقبة للطابور فقط. لا يرسل المستخدم Bot Token أو `client_secrets.json` أو OAuth tokens أو مفاتيح Gemini داخل المحادثة، ولا يقبل البوت ملفات أو روابط عشوائية.
+
+تستخدم النسخة الحالية اتصالاً صادراً من Windows عبر **long polling**. وفق وثائق Telegram، فإن `getUpdates` وwebhook طريقتان متنافيتان لاستقبال التحديثات، كما أن `getUpdates` يعمل بالـ long polling؛ لذلك لا يفتح OUSSAMA منفذاً عاماً ولا يحتاج إلى webhook أو إعادة توجيه منافذ الراوتر [1].
+
+## نموذج التشغيل
+
+| العنصر | السلوك |
+|---|---|
+| مكان التشغيل | داخل عملية OUSSAMA Cutter المحلية على Windows |
+| الاتصال | HTTPS صادر إلى Telegram Bot API باستخدام long polling |
+| منفذ عام | لا يوجد؛ لا webhook ولا public port |
+| الملفات والقص | تبقى في `VIRALS` وعلى قرص المشروع |
+| الصلاحيات | Chat IDs في allowlist؛ الدردشة غير المصرح بها لا تتلقى رداً |
+| الأسرار | Bot Token من متغير البيئة فقط، ولا يظهر في الواجهة أو السجل أو الأرشيف |
+| YouTube | لا يوجد رفع فعلي أو OAuth من Telegram؛ هذه الوظائف تبقى خلف WebUI وبوابات التأكيد |
+| التشغيل | يبدأ فقط عند تفعيل صريح ووجود Token وChat ID صحيحين |
+
+يعمل البوت فقط ما دام WebUI أو عملية OUSSAMA Cutter مفتوحة. إغلاق التطبيق يوقف polling، ولا توجد خدمة سحابية تعمل نيابة عنك في الخلفية.
+
+## المتطلبات الأمنية قبل التفعيل
+
+أنشئ بوتاً من حسابك أنت عبر [@BotFather](https://telegram.me/BotFather)، وهو أداة Telegram الرسمية لإدارة البوتات. ترشد وثائق Telegram إلى إرسال `/newbot` واتباع خطوات الإنشاء، كما تؤكد أن الـ Token كلمة سر ويجب عدم مشاركته [2]. احتفظ بالـ Token في مدير كلمات مرور أو في متغيرات مستخدم Windows، ولا تضعه داخل Git أو ZIP أو لقطة شاشة.
+
+أضف البوت إلى محادثة خاصة معك، ثم أرسل له رسالة مثل `/help`. لا يستطيع البوت عادةً بدء محادثة مع المستخدم قبل أن يتواصل المستخدم معه أولاً؛ هذا متوافق مع شرح Telegram لإرسال الرسائل الخاصة [2].
+
+## إعداد Windows بطريقة env-only
+
+من مجلد المشروع `D:\SS` افتح **PowerShell**، وانسخ الملف الآمن `telegram_control.example.ps1` إلى اسم محلي غير مضمّن في الأرشيف، ثم شغّله. الملف النموذجي يطلب القيم محلياً ولا يحتوي Token فعلياً:
+
+```powershell
+cd D:\SS
+Copy-Item .\telegram_control.example.ps1 .\telegram_control.local.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+.\telegram_control.local.ps1
+```
+
+سيطلب الملف Bot Token محلياً، ثم Chat IDs المسموح بها. لا ترسل أي قيمة إلى الدعم أو إلى هذه المحادثة. بعد نجاحه، أغلق PowerShell وافتح نافذة جديدة حتى ترث عملية التشغيل متغيرات User Environment. لا تجعل الملف المحلي جزءاً من ZIP أو Git.
+
+إذا فضّلت إعداد المتغيرات يدوياً، فالقيم المطلوبة هي:
+
+| المتغير | القيمة |
+|---|---|
+| `VIRALCUTTER_TELEGRAM_ENABLED` | `1` لتفعيل الخدمة؛ أي قيمة أخرى تعني disabled |
+| `VIRALCUTTER_TELEGRAM_BOT_TOKEN` | Token الصادر من BotFather، محلياً فقط |
+| `VIRALCUTTER_TELEGRAM_CHAT_IDS` | رقم أو أكثر مفصول بفاصلة أو مسافة، مثل `123456789`؛ استعمل رقمك أنت فقط |
+| `VIRALCUTTER_TELEGRAM_POLL_INTERVAL` | اختياري، بين 1 و60 ثانية؛ الافتراضي ثانيتان |
+| `VIRALCUTTER_TELEGRAM_LONG_POLL_TIMEOUT` | اختياري، بين 0 و50 ثانية؛ الافتراضي 20 ثانية |
+| `VIRALCUTTER_TELEGRAM_NOTIFY_TERMINAL` | اختياري؛ اضبطه على `1` لإشعار Chat IDs المسموح بها عند succeeded/failed/cancelled؛ الافتراضي معطل |
+
+يظهر في WebUI عدد Chat IDs فقط وحالة `disabled` أو `ready` أو `configuration incomplete`. لا يظهر Token ولا محتوى متغير البيئة. الإشعارات النهائية اختيارية ومغلقة افتراضياً؛ عند تفعيلها يرسل البوت حالة المهمة ومعرّفاً مختصراً فقط، لا السجل ولا مسار الملف ولا الفيديو.
+
+## الحصول على Chat ID محلياً دون إرساله لأي شخص
+
+بعد إنشاء البوت وإرسال `/help` له، شغّل الخطوات التالية في PowerShell محلياً. سيطلب السطر الأول Token في جلسة PowerShell؛ لا تضعه في نص الأمر ولا في ملف المشروع:
+
+```powershell
+$token = Read-Host "Bot Token (محلي فقط؛ لا ترسله لأي شخص)"
+$updates = Invoke-RestMethod -Method Get -Uri ("https://api.telegram.org/bot{0}/getUpdates" -f $token)
+$updates.result |
+    ForEach-Object { $_.message.chat.id } |
+    Where-Object { $_ -ne $null } |
+    Sort-Object -Unique
+Remove-Variable token
+```
+
+انسخ رقم المحادثة الظاهر إلى إعداد Chat IDs المحلي. هذه الخطوة تستخدم Telegram Bot API مباشرة من جهازك؛ وثائق API توضح صيغة طلبات HTTPS وطريقة `getUpdates` [1]. إذا لم يظهر رقم، أرسل رسالة جديدة للبوت ثم أعد الفحص. لا تحفظ رابط الطلب في سجل أو ملف، ولا تضع Token في متصفح أو لقطة شاشة.
+
+## تشغيل OUSSAMA والتحقق
+
+شغّل OUSSAMA بالطريقة المعتادة من `D:\SS`، ثم راجع الصفحة الرئيسية. يجب أن تظهر بطاقة Telegram بحالة جاهزة وعدد المحادثات المصرح بها. كما يمكن تشغيل فحوص القراءة فقط:
+
+```powershell
+cd D:\SS
+.\.venv\Scripts\python.exe -m scripts.preflight --check
+.\.venv\Scripts\python.exe -m scripts.windows_diagnostics --root D:\SS
+```
+
+لا يعتبر Telegram اعتماداً حرجاً؛ إذا كان disabled أو ناقص الإعداد، يبقى القص وWebUI قادرين على العمل. عند التفعيل الصحيح يبدأ البوت بعد preflight داخل `_launch()`، وليس بمجرد استيراد الوحدة أو أثناء الاختبارات.
+
+## الأوامر المتاحة
+
+| الأمر | الوظيفة | مستوى الحساسية |
+|---|---|---|
+| `/help` | عرض الأوامر وحدود الأمان | قراءة فقط |
+| `/status` | عرض حالة الطابور والإيقاف المؤقت وعدد المهام | قراءة فقط |
+| `/projects` | عرض أسماء المشاريع المحلية المسموح بها | قراءة فقط |
+| `/audit <project>` | ملخص آمن لتقارير polish والتتبع ودفعة النشر، إن وجدت | قراءة فقط |
+| `/pause` | إيقاف جدولة مهام جديدة مؤقتاً في الطابور | تحكم قابل للعكس |
+| `/resume` | استئناف الطابور | تحكم قابل للعكس |
+| `/retry_failed` | إعادة المهام الفاشلة وفق منطق الطابور الدائم | ينشئ إعادة محاولة محلية |
+| `/cancel <job_id>` | إلغاء مهمة محددة | تحكم مؤثر على مهمة واحدة |
+| `/cancel_all` | يطلب إلغاء جميع المهام | يحتاج `/confirm_cancel_all` خلال 60 ثانية ومن نفس Chat ID |
+| `/confirm_cancel_all` | يؤكد الإلغاء الجماعي المطلوب | مدمر نسبياً ومقيد بالتأكيد |
+
+يجب تمرير اسم المشروع البسيط فقط إلى `/audit` و`/projects`. المسارات مثل `../demo` أو المسارات المطلقة مرفوضة لمنع الخروج من مجلد `VIRALS`. الرسائل محدودة الطول، ولا يرسل البوت مسارات كاملة أو سجلات حساسة.
+
+## ما لا يفعله البوت
+
+لا يوجد في هذه المرحلة أمر `/upload` أو `/publish` أو `/start` لمعالجة مشروع جديد من Telegram. هذا قرار محافظ: بدء pipeline ورفع YouTube وتحديد الخصوصية والجدولة تحتاج إعداداً واضحاً وموافقة من WebUI، وبعدها تمر عبر preflight وcontent guard ومنع التكرار وبوابات OAuth الحالية. لا يرفع البوت ملفات الفيديو ولا يستقبل `client_secrets.json` ولا ينفذ أوامر shell.
+
+كما أن نجاح `/status` لا يعني أن قناة YouTube جاهزة، ولا يعني أن quota أو سياسة المحتوى ستسمح بالنشر. تحقق القناة والرفع الحقيقيان يظلان في WebUI مع dry-run وبوابات الأمان الموجودة.
+
+## استكشاف الأخطاء
+
+| العرض | الإجراء الآمن |
+|---|---|
+| `disabled` | تحقق من أن `VIRALCUTTER_TELEGRAM_ENABLED=1` في User Environment، ثم افتح PowerShell وOUSSAMA من جديد |
+| `missing token` | أعد تشغيل الملف المحلي واكتب Token الصحيح محلياً؛ لا تضعه في المحادثة |
+| `missing Chat IDs` | أرسل رسالة للبوت أولاً، استخرج Chat ID محلياً، ثم أعد ضبط allowlist |
+| البوت لا يرد | تأكد أن التطبيق مفتوح، وأن المحادثة ضمن allowlist، وأن لا webhook قديم يمنع `getUpdates`; Telegram ينص على أن getUpdates لا يعمل مع webhook مفعّل [1] |
+| رد Telegram يقول إن الطلب مرفوض | راجع `/status` وpreflight؛ لا تُعد إرسال Token أو ملفات المشروع |
+| Token ربما تسرّب | استخدم BotFather لإلغاء/تدوير Token فوراً، حدّث متغير البيئة محلياً، ثم أعد تشغيل OUSSAMA. وثائق Telegram تذكر أن Token يمكن إلغاؤه [2] |
+| توقف التطبيق بعد تعديل البيئة | أغلق عملية OUSSAMA القديمة وافتح PowerShell جديداً؛ لا يكفي تعديل البيئة بعد بدء العملية |
+
+## اختبار محلي بلا Telegram حقيقي
+
+اختبارات الوحدة تستخدم جلسة HTTP وهمية وطابوراً وهمياً، ولذلك لا تحتاج Token أو اتصالاً فعلياً ولا ترسل رسالة. اختبار خدمة Telegram الحقيقي غير منفذ في بيئة التطوير؛ التحقق الواقعي يتطلب أن ينشئ المستخدم BotFather bot ويضبط المتغيرات على Windows بنفسه.
+
+## مراجع
+
+[1]: https://core.telegram.org/bots/api "Telegram Bot API — Making requests and getting updates"
+
+[2]: https://core.telegram.org/bots/tutorial "Telegram — From BotFather to Hello World"
+
+[3]: https://telegram.me/BotFather "Telegram — BotFather"

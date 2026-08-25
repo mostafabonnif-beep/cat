@@ -26,12 +26,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
-from typing import Any
 
 try:
     from scenedetect import (  # type: ignore
-        AdaptiveDetector,
         ContentDetector,
         SceneManager,
         open_video,

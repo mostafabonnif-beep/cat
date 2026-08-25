@@ -20,11 +20,12 @@ import importlib.metadata as metadata
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 OK = "ok"
 WARN = "warn"
@@ -187,6 +188,27 @@ def _oauth_checks() -> list[dict[str, Any]]:
     return checks
 
 
+def _telegram_check(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """Read optional Telegram environment settings without exposing secrets."""
+    env = environ if environ is not None else os.environ
+    enabled = str(env.get("VIRALCUTTER_TELEGRAM_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return _check("Telegram Control", WARN, "disabled - local polling will not start")
+    token = str(env.get("VIRALCUTTER_TELEGRAM_BOT_TOKEN", "") or "").strip()
+    raw_ids = str(env.get("VIRALCUTTER_TELEGRAM_CHAT_IDS", "") or "")
+    chat_ids = {
+        item for item in re.split(r"[\s,;]+", raw_ids.strip())
+        if re.fullmatch(r"-?\d+", item)
+    }
+    if not token:
+        return _check("Telegram Control", WARN, "enabled but bot token is missing (value is never shown)")
+    if not chat_ids:
+        return _check("Telegram Control", WARN, "enabled but no valid allowlisted Chat ID is configured")
+    if not re.fullmatch(r"\d{6,}:[A-Za-z0-9_-]{20,}", token):
+        return _check("Telegram Control", WARN, "enabled with a token whose format could not be validated")
+    return _check("Telegram Control", OK, "ready; local long polling; %d allowlisted Chat ID(s)" % len(chat_ids))
+
+
 def collect(root: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     """Collect a JSON-serializable diagnostic report without side effects."""
     root_path = Path(root or Path(__file__).resolve().parents[1]).expanduser().resolve()
@@ -200,6 +222,7 @@ def collect(root: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     checks.extend([_binary_check("ffmpeg", critical=True), _binary_check("ffprobe", critical=True), _binary_check("deno")])
     checks.extend(_torch_checks())
     checks.extend(_oauth_checks())
+    checks.append(_telegram_check())
     checks.extend(
         _check(label, OK if imported else WARN, info)
         for label, module_name, dist in (

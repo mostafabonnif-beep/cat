@@ -88,12 +88,11 @@ class TestThumbnail:
         assert os.path.getsize(str(out)) > 1000
 
     def test_wrap_text(self):
-        from PIL import ImageFont
         font = thumbnail_generator._load_font(30, bold=True, text="abc")
         lines = thumbnail_generator._wrap_text(
             "one two three four five six seven eight nine ten", font, 120)
         assert isinstance(lines, list) and lines
-        assert all(len(l) <= 30 for l in lines)
+        assert all(len(line) <= 30 for line in lines)
 
     def test_arabic_font_choice(self):
         ar = thumbnail_generator._load_font(40, bold=True, text="كسب المال")

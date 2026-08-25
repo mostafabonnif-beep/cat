@@ -127,7 +127,6 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
     # Headroom: nudge the crop upward so the eyes land ~1/3 down the frame.
     # Each 0.1 shifts the crop center up by 10% of the crop height.
     if headroom > 0:
-        face_height = max(1, y2 - y1)
         shift = int(source_h * min(0.35, float(headroom)))
         # Never push the face off-screen: cap shift so the crop still fits.
         shift = min(shift, max(0, (face_center_y - y1) // 2))

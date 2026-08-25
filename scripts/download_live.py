@@ -190,7 +190,7 @@ def download_when_live_ends(url, *, base_root="VIRALS", quality="best",
                             max_wait_seconds=DEFAULT_MAX_WAIT_SECONDS,
                             progress=None, sleep=None):
     """Wait for a live stream to end, then download it as a normal VOD."""
-    final = wait_until_ended(
+    wait_until_ended(
         url, poll_seconds=poll_seconds, max_wait_seconds=max_wait_seconds,
         cookies_from_browser=cookies_from_browser, cookies_file=cookies_file,
         progress=progress, sleep=sleep)
