@@ -2636,71 +2636,72 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                                          pub_full_oauth, pub_public_confirm],
                                  outputs=pub_log)
 
-        with gr.Accordion(i18n("🧠 SEO Tools (v7.22): اقتراح عناوين وأوقات النشر"), open=False):
-            gr.Markdown("**عناوين SEO ذكية:** أدخل موضوع المقطع — تحصل على عناوين مقترحة مرتبة بدرجات، مع جلب اقتراحات البحث من يوتيوب (بدون مفتاح API). **أوقات النشر:** احسب أفضل الأوقات تلقائياً أو حدد ساعاتك المفضلة.", elem_classes=["vc-help-card"])
-            with gr.Row():
-                seo_topic_input = gr.Textbox(label=i18n("Topic (موضوع المقطع)"), placeholder="مثال: كسب المال من الانترنت", scale=3)
-                seo_keywords_input = gr.Textbox(label=i18n("Keywords (كلمات مفتاحية، مفصولة بفاصلة)"), placeholder="كسب المال، الربح، العمل من المنزل", scale=2)
-                seo_platform_input = gr.Dropdown(choices=["youtube", "tiktok", "reels"], value="youtube", label=i18n("Platform"), scale=1)
-            with gr.Row():
-                seo_gen_btn = gr.Button(i18n("✨ Generate SEO Titles"), size="sm")
-                seo_suggest_btn = gr.Button(i18n("🔍 YouTube Suggestions"), size="sm")
-                seo_slots_btn = gr.Button(i18n("🕐 Best Publish Times"), size="sm")
-            seo_out = gr.Textbox(label=i18n("Result"), lines=10, interactive=False)
+            with gr.Accordion(i18n("🧠 SEO Tools (v7.22): اقتراح عناوين وأوقات النشر"), open=False):
+                gr.Markdown("**عناوين SEO ذكية:** أدخل موضوع المقطع — تحصل على عناوين مقترحة مرتبة بدرجات، مع جلب اقتراحات البحث من يوتيوب (بدون مفتاح API). **أوقات النشر:** احسب أفضل الأوقات تلقائياً أو حدد ساعاتك المفضلة.", elem_classes=["vc-help-card"])
+                with gr.Row():
+                    seo_topic_input = gr.Textbox(label=i18n("Topic (موضوع المقطع)"), placeholder="مثال: كسب المال من الانترنت", scale=3)
+                    seo_keywords_input = gr.Textbox(label=i18n("Keywords (كلمات مفتاحية، مفصولة بفاصلة)"), placeholder="كسب المال، الربح، العمل من المنزل", scale=2)
+                    seo_platform_input = gr.Dropdown(choices=["youtube", "tiktok", "reels"], value="youtube", label=i18n("Platform"), scale=1)
+                with gr.Row():
+                    seo_gen_btn = gr.Button(i18n("✨ Generate SEO Titles"), size="sm")
+                    seo_suggest_btn = gr.Button(i18n("🔍 YouTube Suggestions"), size="sm")
+                    seo_slots_btn = gr.Button(i18n("🕐 Best Publish Times"), size="sm")
+                seo_out = gr.Textbox(label=i18n("Result"), lines=10, interactive=False)
 
-            def run_seo_titles(topic, keywords, platform):
-                try:
-                    from scripts import seo_titles
-                    kws = [k.strip() for k in (keywords or "").split(",") if k.strip()]
-                    titles = seo_titles.generate_titles(topic or "مقاطع قصيرة", kws, count=6)
-                    lines = ["## عناوين مقترحة (مرتبة بالدرجة):"]
-                    for t in titles:
-                        lines.append("• [{}] {}".format(t["score"], t["title"]))
-                    if kws:
+                def run_seo_titles(topic, keywords, platform):
+                    try:
+                        from scripts import seo_titles
+                        kws = [k.strip() for k in (keywords or "").split(",") if k.strip()]
+                        titles = seo_titles.generate_titles(topic or "مقاطع قصيرة", kws, count=6)
+                        lines = ["## عناوين مقترحة (مرتبة بالدرجة):"]
+                        for t in titles:
+                            lines.append("• [{}] {}".format(t["score"], t["title"]))
+                        if kws:
+                            lines.append("")
+                            lines.append("## اقتراحات بحث يوتيوب:")
+                            for s in seo_titles.fetch_suggestions(topic or kws[0]):
+                                lines.append("  - " + s)
                         lines.append("")
-                        lines.append("## اقتراحات بحث يوتيوب:")
-                        for s in seo_titles.fetch_suggestions(topic or kws[0]):
-                            lines.append("  - " + s)
-                    lines.append("")
-                    lines.append("## أفضل أوقات النشر ({}):".format(platform))
-                    for slot in seo_titles.suggest_next_slots(platform, count=4):
-                        lines.append("  - " + slot)
-                    return "\n".join(lines)
-                except Exception as exc:
-                    return "❌ " + str(exc)
+                        lines.append("## أفضل أوقات النشر ({}):".format(platform))
+                        for slot in seo_titles.suggest_next_slots(platform, count=4):
+                            lines.append("  - " + slot)
+                        return "\n".join(lines)
+                    except Exception as exc:
+                        return "❌ " + str(exc)
 
-            def run_seo_suggestions(topic, keywords, platform):
-                try:
-                    from scripts import seo_titles
-                    kws = [k.strip() for k in (keywords or "").split(",") if k.strip()]
-                    query = topic or (kws[0] if kws else "")
-                    if not query:
-                        return "❌ أدخل موضوعاً أو كلمة مفتاحية أولاً."
-                    results = seo_titles.fetch_suggestions(query)
-                    if not results:
-                        return "لا توجد اقتراحات (قد يكون الطلب بدون نتائج أو الشبكة غير متاحة)."
-                    return "\n".join("• " + s for s in results)
-                except Exception as exc:
-                    return "❌ " + str(exc)
+                def run_seo_suggestions(topic, keywords, platform):
+                    try:
+                        from scripts import seo_titles
+                        kws = [k.strip() for k in (keywords or "").split(",") if k.strip()]
+                        query = topic or (kws[0] if kws else "")
+                        if not query:
+                            return "❌ أدخل موضوعاً أو كلمة مفتاحية أولاً."
+                        results = seo_titles.fetch_suggestions(query)
+                        if not results:
+                            return "لا توجد اقتراحات (قد يكون الطلب بدون نتائج أو الشبكة غير متاحة)."
+                        return "\n".join("• " + s for s in results)
+                    except Exception as exc:
+                        return "❌ " + str(exc)
 
-            def run_seo_slots(topic, keywords, platform):
-                try:
-                    from scripts import seo_titles
-                    slots = seo_titles.suggest_next_slots(platform, count=6)
-                    return "أفضل أوقات النشر القادمة ({}):\n{}".format(
-                        platform, "\n".join("  - " + s for s in slots))
-                except Exception as exc:
-                    return "❌ " + str(exc)
+                def run_seo_slots(topic, keywords, platform):
+                    try:
+                        from scripts import seo_titles
+                        slots = seo_titles.suggest_next_slots(platform, count=6)
+                        return "أفضل أوقات النشر القادمة ({}):\n{}".format(
+                            platform, "\n".join("  - " + s for s in slots))
+                    except Exception as exc:
+                        return "❌ " + str(exc)
 
-            seo_gen_btn.click(run_seo_titles,
-                              inputs=[seo_topic_input, seo_keywords_input, seo_platform_input],
-                              outputs=seo_out)
-            seo_suggest_btn.click(run_seo_suggestions,
+                seo_gen_btn.click(run_seo_titles,
                                   inputs=[seo_topic_input, seo_keywords_input, seo_platform_input],
                                   outputs=seo_out)
-            seo_slots_btn.click(run_seo_slots,
-                                inputs=[seo_topic_input, seo_keywords_input, seo_platform_input],
-                                outputs=seo_out)
+                seo_suggest_btn.click(run_seo_suggestions,
+                                      inputs=[seo_topic_input, seo_keywords_input, seo_platform_input],
+                                      outputs=seo_out)
+                seo_slots_btn.click(run_seo_slots,
+                                    inputs=[seo_topic_input, seo_keywords_input, seo_platform_input],
+                                    outputs=seo_out)
+
 
         with gr.Tab("🗂️ " + i18n("Library")):
             gr.Markdown(f"### {i18n('Existing Projects')}")

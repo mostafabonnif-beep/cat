@@ -196,6 +196,9 @@ class TelegramCommandRouter:
             "/cancel <job_id> — إلغاء مهمة محددة\n"
             "/cancel_all — طلب تأكيد إلغاء كل المهام\n"
             "/confirm_cancel_all — تأكيد الإلغاء الجماعي\n"
+            "/process <url> — بدء معالجة رابط يوتيوب (تحميل+تقطيع+ترجمات)\n"
+            "/upload <project> — تجربة رفع (Dry Run، لا يرفع شيئاً)\n"
+            "/confirm_upload <project> — تأكيد الرفع الفعلي على يوتيوب\n"
             "/help — عرض هذه القائمة\n\n"
             "لا يستقبل البوت client_secrets أو OAuth ولا ينفذ رفع YouTube حقيقياً مباشرة."
         )
@@ -488,6 +491,76 @@ def build_queue_handlers(queue, project_root: str | None = None) -> dict[str, Ha
                 continue
         return "🛑 طُلب إلغاء {} مهمة نشطة.".format(cancelled)
 
+    pending_uploads: dict[str, str] = {}  # chat_id -> project (confirm step)
+
+    def _threaded(reply):
+        """Run a handler in a daemon thread so long jobs never block polling."""
+        import threading
+        threading.Thread(target=reply, daemon=True).start()
+
+    def process(context: CommandContext, args: str):
+        url = str(args or "").strip()
+        if not url:
+            return "❌ أرسل رابط يوتيوب بعد /process:\n/process https://youtube.com/watch?v=ID"
+        # Validate before queueing (no long work on the polling thread)
+        try:
+            from scripts.pipeline_runner import is_youtube_url
+            if not is_youtube_url(url):
+                return "❌ الرابط ليس رابط يوتيوب صالحاً: {}".format(url[:80])
+        except Exception:
+            return "❌ تعذر التحقق من الرابط."
+        _threaded(lambda: _send_done(context.chat_id, "process", url))
+        return "🚀 بدأت معالجة: {}\nستصلك الرسالة عند الانتهاء. /status لأي استفسار.".format(url)
+
+    def _send_done(chat_id: str, kind: str, value):
+        try:
+            if kind == "process":
+                from scripts.pipeline_runner import run_pipeline
+                result = run_pipeline(value, segments=3, scene_snap=True)
+                api.send_message(chat_id, result.message)
+            elif kind == "upload":
+                from scripts.pipeline_runner import upload_project
+                result = upload_project(value, dry_run=True)
+                api.send_message(chat_id, result.message)
+        except Exception as exc:
+            try:
+                api.send_message(chat_id, "❌ فشل: {}".format(redact(exc)[:400]))
+            except Exception:
+                pass
+
+    def upload(context: CommandContext, args: str):
+        name = str(args or "").strip()
+        path = _project_path(name)
+        if not path:
+            return "❌ اسم المشروع غير صحيح. استخدم /projects ثم /upload <الاسم>."
+        pending_uploads[context.chat_id] = path
+        _threaded(lambda: _send_done(context.chat_id, "upload", path))
+        return "🔍 جارٍ تجهيز قائمة المقاطع (Dry Run)... ستصلك القائمة ثم أرسل /confirm_upload {} للرفع الفعلي.".format(name)
+
+    def confirm_upload(context: CommandContext, args: str):
+        name = str(args or "").strip()
+        path = _project_path(name)
+        expected = pending_uploads.pop(context.chat_id, None)
+        if not path:
+            return "❌ المشروع غير موجود. أرسل /upload <project> أولاً."
+        if expected is None:
+            return "⚠️ لم تجرِ /upload أولاً. أرسل /upload {} ثم /confirm_upload {}.".format(name, name)
+        if os.path.abspath(expected) != os.path.abspath(path):
+            return "❌ تغيّر اسم المشروع بين الخطوتين؛ أعد /upload {} من البداية.".format(name)
+
+        def _do_upload():
+            try:
+                from scripts.pipeline_runner import upload_project
+                result = upload_project(path, dry_run=False, privacy="private")
+                api.send_message(context.chat_id, result.message)
+            except Exception as exc:
+                try:
+                    api.send_message(context.chat_id, "❌ فشل الرفع: {}".format(redact(exc)[:400]))
+                except Exception:
+                    pass
+        _threaded(_do_upload)
+        return "🚀 بدأ الرفع الفعلي للمشروع {}. ستصلك النتيجة عند الانتهاء.".format(name)
+
     return {
         "status": status,
         "projects": projects,
@@ -498,6 +571,9 @@ def build_queue_handlers(queue, project_root: str | None = None) -> dict[str, Ha
         "cancel": cancel,
         "cancel_all": cancel_all,
         "confirm_cancel_all": confirm_cancel_all,
+        "process": process,
+        "upload": upload,
+        "confirm_upload": confirm_upload,
     }
 
 
