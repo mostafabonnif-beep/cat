@@ -222,3 +222,15 @@ def test_service_is_disabled_without_explicit_configuration(monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
     assert start_from_environment(FakeQueue()) is None
+
+
+def test_telegram_surface_excludes_pipeline_and_upload_commands():
+    api = TelegramAPI("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh", session=FakeSession(), base_url="http://test")
+    router = TelegramCommandRouter(api, ["10"], {})
+    help_text = router._help()
+    assert "/process" not in help_text
+    assert "/upload" not in help_text
+    assert "/confirm_upload" not in help_text
+    assert "process" not in router.handlers
+    assert "upload" not in router.handlers
+    assert "confirm_upload" not in router.handlers

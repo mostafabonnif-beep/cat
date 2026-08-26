@@ -1,48 +1,29 @@
-# OUSSAMA Cutter 7.25.0-pro — التحكم الكامل عبر Telegram
+# سجل تغييرات OUSSAMA Cutter
 
-# إصدار OUSSAMA Cutter 7.25.0-pro — التحكم الكامل عبر Telegram
+# إصدار OUSSAMA Cutter 7.25.0-pro — تفريغ صوتي مقاوم للأخطاء
 
-تضيف هذه النسخة **التحكم الكامل** إلى مركز Telegram الموجود (7.24):
-إعطاء البوت رابط حلقة يوتيوب فيبدأ المعالجة كاملة، ثم رفع القطع على قناتك —
-كل ذلك من هاتفك.
+تضيف هذه النسخة مساراً اختيارياً مستقلاً عبر **faster-whisper** فوق مسار WhisperX + Torch الأساسي. الوضع الافتراضي `auto` يفضّل WhisperX، ثم ينتقل إلى fallback عندما يتعذر استيراد WhisperX أو Torch. لا تضيف النسخة أي أمر Telegram لبدء pipeline أو رفع YouTube.
 
-## أوامر جديدة
+## الحماية والنطاق
 
-| الأمر | ماذا يفعل |
-|---|---|
-| `/process https://youtube.com/...` | يبدأ المعالجة فوراً: تحميل ← تقطيع ← ترجمات ← أمان ← (اختياري رفع). يعمل في خيط منفصل — لا يحجب أوامر البوت الأخرى، وتصلك رسالة عند الانتهاء. |
-| `/upload <project>` | **تجربة رفع (Dry Run)** — يسرد المقاطع الجاهزة دون رفع أي شيء. |
-| `/confirm_upload <project>` | الرفع الفعلي للمقاطع على قناتك (خاص private). |
+- الاستيراد lazy ولا يحدث تنزيل نموذج أثناء إقلاع WebUI.
+- يمكن تثبيت fallback من `requirements-transcribe-fallback.txt` أو عبر `--repair-fallback` دون تثبيت Torch أو WhisperX من جديد.
+- تُنتج المخرجات SRT وTSV وJSON متوافقة مع pipeline، ويُرفض segment غير صالح زمنياً.
+- يبقى placeholder مغلقاً افتراضياً ولا يُعتبر بديلاً عن تفريغ إنتاجي.
+- Telegram يبقى محصوراً في الحالة والتقارير والتحكم المحلي بالطابور، مع allowlist وتأكيد للإلغاء، ولا يقبل ملفات أو OAuth أو أوامر shell.
 
-## الحماية (الأمان أولاً)
+## اختيار backend على Windows
 
-- **الرابط يُتحقق منه** قبل أي عمل: فقط youtube.com / youtu.be مقبولة.
-- **الرفع الفعلي بخطوتين**: `/upload` أولاً (يظهر ما سيُرفع) ثم `/confirm_upload`
-  بنفس اسم المشروع خلال نفس الجلسة — رسالة واحدة خاطئة لا يمكن أن ترفع شيئاً.
-- **الرفع private فقط** عبر OAuth المخزّن محلياً — لا توكنات في الرسائل.
-- **Lock واحد**: معالجة أو رفع واحد في كل مرة (لا إغراق للجهاز).
-- يمر الرفع عبر بوابة الأمان الكاملة نفسها (فحص التكرار، الأمان، الموسيقى،
-  بطاقة المخاطر) — نفس حماية رفع الويب تماماً.
-- الأوامر الجديدة للدردشات المصرح بها فقط (نفس allowlist).
+```powershell
+.\.venv\Scripts\python.exe -m scripts.transcription_diagnostics --repair-fallback
+$env:VIRALCUTTER_TRANSCRIPTION_BACKEND="auto"
+# أو فرض المسار المستقل:
+$env:VIRALCUTTER_TRANSCRIPTION_BACKEND="faster-whisper"
+```
 
-## البنية
+## التحقق
 
-- `scripts/pipeline_runner.py` (جديد): مشغّل مستقل يستدعي `main_improved.py`
-  كعملية فرعية نظيفة (بمعزل عن Gradio) + رفع عبر `publish_panel` بنفس
-  البوابات. قابل للاستخدام من سطر الأوامر أيضاً:
-  ```
-  python scripts/pipeline_runner.py process "https://youtube.com/watch?v=ID"
-  python scripts/pipeline_runner.py upload "اسم-المشروع" --dry-run
-  ```
-- `webui/telegram_control.py`: أضيفت أوامر `/process` و`/upload` و`/confirm_upload`
-  إلى قائمة الأوامر، مع تحديث رسالة `/help`.
-
-## الاختبارات
-
-- **20 اختباراً جديداً**: التحقق من الروابط، قفل المهمة الواحدة، نجاح/فشل
-  المعالجة، إيجاد مجلد المشروع والمقاطع، Dry Run للرفع، الرفع الحقيقي عبر
-  البوابة، وسلوك أوامر البوت.
-- إجمالي المجموعة: **859 اختباراً ناجحاً**.
+أضيفت اختبارات لتطبيع segments والكلمات، الكتابة الذرية لـSRT/TSV/JSON، cache، اختيار backend، repair-fallback، وتشخيص Windows. نجح regression الكامل بعد التغيير بعدد **846 اختباراً**، كما نجح `ruff` و`compileall` و`uv lock --check`. الاختبار الفعلي لموديل faster-whisper وCUDA وTelegram وYouTube يجب أن يتم على جهاز Windows المستخدم.
 
 ---
 
