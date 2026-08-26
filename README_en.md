@@ -1,10 +1,10 @@
-# ViralCutter
+# OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-839%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-845%20passed-brightgreen)](tests/)
 [![Discord](https://dcbadge.limes.pink/api/server/tAdPHFAbud)](https://discord.gg/tAdPHFAbud)<br>
 
-**100% Free, Local, and Unlimited Open-Source Alternative to Opus Clip**  
+**OUSSAMA Cutter — 100% Free, Local, and Unlimited Open-Source Alternative to Opus Clip**
 Turn long YouTube videos into viral shorts optimized for TikTok, Instagram Reels, and YouTube Shorts – with state-of-the-art AI, dynamic captions, precise *face tracking*, and automatic translation. All running on your machine.
 
 [![Stars](https://img.shields.io/github/stars/mostafabonnif-beep/cat?style=social)](https://github.com/mostafabonnif-beep/cat/stargazers)
@@ -19,11 +19,11 @@ Turn long YouTube videos into viral shorts optimized for TikTok, Instagram Reels
 > packaging in this repository on top of the upstream code.
 
 
-## Why is ViralCutter a "Game Changer"?
+## Why is OUSSAMA Cutter a "Game Changer"?
 
-Forget expensive subscriptions and minute limits. ViralCutter offers unlimited power on your own hardware.
+Forget expensive subscriptions and minute limits. OUSSAMA Cutter offers unlimited power on your own hardware.
 
-| Feature | ViralCutter (Open-Source) | Opus Clip / Klap / Munch (SaaS) |
+| Feature | OUSSAMA Cutter (Open-Source) | Opus Clip / Klap / Munch (SaaS) |
 | :--- | :--- | :--- |
 | **Price** | **Free & Unlimited** | $20–$100/mo + minute limits |
 | **Privacy** | **100% Local** (Your data never leaves your PC) | Upload to third-party cloud |
@@ -39,7 +39,7 @@ Forget expensive subscriptions and minute limits. ViralCutter offers unlimited p
 
 -   🤖 **AI Viral Cut**: Automatically identifies hooks and engaging moments using **Gemini**, **GPT-4**, or **Local LLMs (Llama 3, DeepSeek, etc)**.
 -   🛡️ **Anti-Strike Safety Filter (New!)**: Blocks clips containing **hate speech / incitement to violence** before cutting — or just **bleeps the violating words** (mute audio + mask subtitles) keeping the clip. Extra contextual AI review (Gemini/G4F). 100% local, multilingual (Arabic + dialects, EN, PT, FR, ES, TR), with a per-project `safety_report.json`.
--   🗣️ **Ultra-Precise Transcription**: Powered by **WhisperX** with GPU acceleration for perfect subtitles.
+-   🗣️ **Resilient Transcription**: **WhisperX** remains the primary path, with optional local `faster-whisper` fallback when Torch/WhisperX is unavailable.
 -   🎨 **Dynamic Captions**: "Hormozi" style with word-by-word highlights, vibrant colors, emojis, and full customization.
 -   🎥 **Auto Camera Direction**:
     -   **Auto-Crop 9:16**: Transforms horizontal to vertical while keeping the focus.
@@ -161,5 +161,5 @@ ViralCutter is community-maintained. Join us to democratize AI content creation!
 - ✅ **Reproducible installs**: `uv sync` (uses `uv.lock`); the classic `install_dependencies.bat` flow still works.
 
 
-**Current Version**: 6.16.1 — automatic pre-flight (checks and installs everything before running)
+**Current Version**: 7.25.0-pro — optional local Telegram control and faster-whisper transcription fallback
 *ViralCutter: Because viral clips shouldn't cost a fortune.* 🚀

@@ -130,7 +130,7 @@ def _torch_checks() -> list[dict[str, Any]]:
     if not ok:
         checks.append(_check("Torch", WARN, "missing or failed import — %s" % detail))
         checks.append(_check("CUDA / NVIDIA GPU", WARN, "cannot probe CUDA because Torch is unavailable"))
-        for module_name, label, dist in (("torchaudio", "Torchaudio", "torchaudio"), ("whisperx", "WhisperX", "whisperx")):
+        for module_name, label, dist in (("torchaudio", "Torchaudio", "torchaudio"), ("whisperx", "WhisperX", "whisperx"), ("faster_whisper", "Faster-whisper fallback", "faster-whisper")):
             imported, info = _import_probe(module_name, dist)
             checks.append(_check(label, OK if imported else WARN, info))
         imported, info = _import_probe("huggingface_hub", "huggingface-hub")
@@ -161,7 +161,7 @@ def _torch_checks() -> list[dict[str, Any]]:
     except Exception as exc:  # pragma: no cover - only damaged torch installs
         checks.append(_check("CUDA / NVIDIA GPU", WARN, "Torch imported but CUDA probe failed: %s" % exc))
 
-    for module_name, label, dist in (("torchaudio", "Torchaudio", "torchaudio"), ("whisperx", "WhisperX", "whisperx")):
+    for module_name, label, dist in (("torchaudio", "Torchaudio", "torchaudio"), ("whisperx", "WhisperX", "whisperx"), ("faster_whisper", "Faster-whisper fallback", "faster-whisper")):
         imported, info = _import_probe(module_name, dist)
         checks.append(_check(label, OK if imported else WARN, info))
     try:

@@ -1,0 +1,12 @@
+# Optional independent transcription fallback for OUSSAMA Cutter.
+# It is not installed by the core setup and is used only when WhisperX/Torch
+# cannot be imported. The backend downloads its model on first use.
+#
+# CPU (safe starting point on Windows):
+#   .\.venv\Scripts\python.exe -m pip install -r requirements-transcribe-fallback.txt
+#
+# NVIDIA GPU: install the CUDA 12/cuDNN 9 runtime required by the selected
+# CTranslate2 version first, then install this file. If GPU libraries are not
+# available, the backend automatically uses CPU when device=auto.
+faster-whisper>=1.2,<2
+numpy<2

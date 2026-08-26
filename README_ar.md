@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-839%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-845%20passed-brightgreen)](tests/)
 
 **البديل المفتوح المصدر المجاني 100% لـ Opus Clip — يعمل محلياً وبلا حدود**
 حوّل فيديوهات يوتيوب الطويلة إلى مقاطع قصيرة فيروسية جاهزة لـ TikTok وInstagram Reels وYouTube Shorts — بذكاء اصطناعي متقدم، وترجمات ديناميكية، وتتبع دقيق للوجه، وترجمة تلقائية. كل شيء يعمل على جهازك.
@@ -95,9 +95,11 @@ run_webui.bat
 winget install Python.Python.3.11          # أو من python.org (فعّل "Add to PATH")
 winget install Gyan.FFmpeg                 # أو نزّل من gyan.dev
 py -m venv .venv
-.\.venv\Scriptsctivate
+.\.venv\Scripts\activate
 pip install -r requirements.txt
-pip install -r requirements-transcribe.txt # whisperx + torch (GPU: ثبّت torch CUDA أولاً)
+pip install -r requirements-transcribe.txt # WhisperX + Torch (GPU: ثبّت Torch CUDA أولاً)
+# اختياري: مسار مستقل عند تعطل WhisperX أو تعارض Hugging Face
+pip install -r requirements-transcribe-fallback.txt
 $env:GEMINI_API_KEY="مفتاحك-هنا"
 python main_improved.py --url "..." --platform tiktok --polish on
 ```
@@ -124,10 +126,13 @@ run_webui.bat
 
 ## التثبيت المحلي (سريع جداً ⚡)
 
-> ✅ **للعمل الكامل (يوتيوب → مقطع فيروسي) تحتاج 3 خطوات فقط**:
+> ✅ **للعمل الكامل (يوتيوب → مقطع فيروسي) تحتاج الخطوات التالية**:
 > 1. `pip install -r requirements.txt`
-> 2. `pip install -r requirements-transcribe.txt`  ← التفريغ الصوتي (whisperx + torch، يُفضّل GPU)
-> 3. ضع مفتاح Gemini: `export GEMINI_API_KEY=...`  (أو `python -m scripts.secure_config --set KEY --passphrase ...`)
+> 2. `pip install -r requirements-transcribe.txt`  ← المسار الأساسي (WhisperX + Torch، يُفضّل GPU)
+> 3. عند تعطل المسار الأساسي: `pip install -r requirements-transcribe-fallback.txt`  ← faster-whisper مستقل
+> 4. ضع مفتاح Gemini: `export GEMINI_API_KEY=...`  (أو `python -m scripts.secure_config --set KEY --passphrase ...`)
+>
+> في Windows يمكن فرض المسار الاحتياطي مؤقتاً: `$env:VIRALCUTTER_TRANSCRIPTION_BACKEND="faster-whisper"`. الوضع الافتراضي `auto` يفضّل WhisperX ثم يستخدم fallback عند غيابه.
 >
 > ثم: `python main_improved.py --url "..." --platform tiktok --polish on`
 >
@@ -390,5 +395,5 @@ Research — مبني على مجموعات موسومة يدوياً من وس�
 - ✅ **تثبيت قابل للتكرار**: `uv sync` (يستخدم `uv.lock`)؛ تدفق `install_dependencies.bat` الكلاسيكي يعمل كما هو.
 
 
-**الإصدار الحالي**: 7.4.0-pro — هوية OUSSAMA Cutter مع تشخيص ذاتي للتفريغ وفحص مسبق آمن
+**الإصدار الحالي**: 7.25.0-pro — هوية OUSSAMA Cutter مع Telegram محلي وfaster-whisper fallback وتشخيص مسبق آمن
 *OUSSAMA Cutter: لأن المقاطع الفيروسية لا يجب أن تكلّف ثروة.*

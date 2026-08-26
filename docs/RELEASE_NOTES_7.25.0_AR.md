@@ -1,43 +1,40 @@
-# إصدار OUSSAMA Cutter 7.25.0-pro — التحكم الكامل عبر Telegram
+# ملاحظات إصدار OUSSAMA Cutter 7.25.0-pro
 
-تضيف هذه النسخة **التحكم الكامل** إلى مركز Telegram الموجود (7.24):
-إعطاء البوت رابط حلقة يوتيوب فيبدأ المعالجة كاملة، ثم رفع القطع على قناتك —
-كل ذلك من هاتفك.
+## ما الجديد
 
-## أوامر جديدة
+تضيف هذه النسخة مسار تفريغ صوتي احتياطياً مستقلاً عبر `faster-whisper` فوق مسار WhisperX + Torch الأساسي. الوضع الافتراضي `auto` يفضّل WhisperX عندما يكون جاهزاً، ثم ينتقل تلقائياً إلى faster-whisper إذا كان WhisperX أو Torch غير قابل للاستيراد. يمكن للمستخدم فرض backend صراحةً عبر `VIRALCUTTER_TRANSCRIPTION_BACKEND=whisperx` أو `faster-whisper`.
 
-| الأمر | ماذا يفعل |
-|---|---|
-| `/process https://youtube.com/...` | يبدأ المعالجة فوراً: تحميل ← تقطيع ← ترجمات ← أمان ← (اختياري رفع). يعمل في خيط منفصل — لا يحجب أوامر البوت الأخرى، وتصلك رسالة عند الانتهاء. |
-| `/upload <project>` | **تجربة رفع (Dry Run)** — يسرد المقاطع الجاهزة دون رفع أي شيء. |
-| `/confirm_upload <project>` | الرفع الفعلي للمقاطع على قناتك (خاص private). |
+لا يستورد OUSSAMA نموذج fallback أثناء إقلاع WebUI ولا ينزّل نموذجاً سراً؛ الاستيراد lazy، ويُنزّل النموذج عند أول تفريغ فقط بعد تثبيت profile الاختياري. يكتب backend مخرجات SRT وTSV وJSON متوافقة مع pipeline، يحفظ cache، ويرفض النتيجة إذا لم تحتوي timestamps صالحة. يبقى placeholder مغلقاً افتراضياً ولا يصلح للإنتاج.
 
-## الحماية (الأمان أولاً)
+## تثبيت Windows
 
-- **الرابط يُتحقق منه** قبل أي عمل: فقط youtube.com / youtu.be مقبولة.
-- **الرفع الفعلي بخطوتين**: `/upload` أولاً (يظهر ما سيُرفع) ثم `/confirm_upload`
-  بنفس اسم المشروع خلال نفس الجلسة — رسالة واحدة خاطئة لا يمكن أن ترفع شيئاً.
-- **الرفع private فقط** عبر OAuth المخزّن محلياً — لا توكنات في الرسائل.
-- **Lock واحد**: معالجة أو رفع واحد في كل مرة (لا إغراق للجهاز).
-- يمر الرفع عبر بوابة الأمان الكاملة نفسها (فحص التكرار، الأمان، الموسيقى،
-  بطاقة المخاطر) — نفس حماية رفع الويب تماماً.
-- الأوامر الجديدة للدردشات المصرح بها فقط (نفس allowlist).
+إذا كان WhisperX يعمل، استمر باستخدام `install_dependencies.bat full` أو `install_dependencies.bat gpu full`. عند تعطل WhisperX أو تضارب Hugging Face، يمكن تثبيت المسار المستقل فقط:
 
-## البنية
+```powershell
+cd D:\SS
+.\.venv\Scripts\python.exe -m scripts.transcription_diagnostics --repair-fallback
+```
 
-- `scripts/pipeline_runner.py` (جديد): مشغّل مستقل يستدعي `main_improved.py`
-  كعملية فرعية نظيفة (بمعزل عن Gradio) + رفع عبر `publish_panel` بنفس
-  البوابات. قابل للاستخدام من سطر الأوامر أيضاً:
-  ```
-  python scripts/pipeline_runner.py process "https://youtube.com/watch?v=ID"
-  python scripts/pipeline_runner.py upload "اسم-المشروع" --dry-run
-  ```
-- `webui/telegram_control.py`: أضيفت أوامر `/process` و`/upload` و`/confirm_upload`
-  إلى قائمة الأوامر، مع تحديث رسالة `/help`.
+أو باستخدام مثبت Windows:
 
-## الاختبارات
+```powershell
+.\install_dependencies.bat fallback
+```
 
-- **20 اختباراً جديداً**: التحقق من الروابط، قفل المهمة الواحدة، نجاح/فشل
-  المعالجة، إيجاد مجلد المشروع والمقاطع، Dry Run للرفع، الرفع الحقيقي عبر
-  البوابة، وسلوك أوامر البوت.
-- إجمالي المجموعة: **859 اختباراً ناجحاً**.
+لجهاز NVIDIA يمكن تجربة `gpu fallback`، لكن إذا لم تتوفر مكتبات CTranslate2/CUDA المتوافقة سيستخدم backend CPU عند `device=auto`. لا يلزم إدخال Token أو API key لهذا المسار.
+
+## التشخيص
+
+يعرض `scripts.transcription_diagnostics` حالات `primary_ready` و`fallback_ready` و`backend`، بينما يعرض `scripts/windows_diagnostics.py` فحص `Faster-whisper fallback` بشكل اختياري. يحافظ الفحص على تشغيل OUSSAMA الأساسي حتى عند غياب كل مكونات التفريغ، ويشرح الإصلاح بدلاً من إعادة المحاولة العمياء.
+
+## الأمان والحدود
+
+faster-whisper مكتبة محلية اختيارية؛ لا ترسل الفيديو أو الصوت إلى خدمة خارجية. يجب مراجعة مصدر النماذج وسياساته داخل بيئة المستخدم، وعدم وضع النماذج داخل Git أو ZIP. لا يزيل fallback حارس المحتوى أو بوابة الرفع، ولا يجعل YouTube أو CUDA مضمونين على كل جهاز.
+
+## التحقق
+
+أضيفت اختبارات لتطبيع segments والكلمات، كتابة SRT/TSV/JSON، اختيار backend، cache، الإصلاح الاختياري، وتشخيص Windows. تم اختبار المسار باستخدام FakeModel/Fake backend في Linux، ولم يُنزّل نموذج فعلي ولم تُنفذ معالجة فيديو حقيقية أو OAuth أو رفع YouTube أثناء الاختبار.
+
+## مشاريع مؤجلة عمداً
+
+بقي OpenTimelineIO وSilero VAD وpyannote.audio وwhisper.cpp في خارطة الطريق. لن تصبح هذه المشاريع اعتمادات أساسية قبل benchmark عربي، فحص ترخيص النماذج، واختبار Windows RTX 3060؛ كما لم يُدمج Demucs لأنه ثقيل والمستودع الرسمي مؤرشف، ولأن music mixing وcopyright fingerprint موجودان أصلاً في OUSSAMA.

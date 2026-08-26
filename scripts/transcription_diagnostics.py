@@ -24,6 +24,7 @@ class TranscriptionUnavailableError(ImportError):
 
 
 APP_NAME = "OUSSAMA Cutter"
+APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIN_FREE_MB = 4096
 
 
@@ -69,7 +70,9 @@ def diagnose(base_dir: Optional[str] = None) -> Dict[str, Any]:
         free_mb = shutil.disk_usage(base_dir).free // (1024 * 1024)
     except Exception:
         free_mb = None
-    probes = {name: _probe(name) for name in ("torch", "torchaudio", "whisperx")}
+    probes = {name: _probe(name) for name in ("torch", "torchaudio", "whisperx", "faster_whisper")}
+    primary_ready = bool(probes["torch"]["ok"] and probes["torchaudio"]["ok"] and probes["whisperx"]["ok"])
+    fallback_ready = bool(probes["faster_whisper"]["ok"])
     missing = [name for name, result in probes.items() if not result["ok"]]
     torch_runtime = _torch_runtime()
     return {
@@ -80,8 +83,11 @@ def diagnose(base_dir: Optional[str] = None) -> Dict[str, Any]:
         "base_dir": base_dir,
         "free_disk_mb": free_mb,
         "disk_ok_for_repair": free_mb is None or free_mb >= MIN_FREE_MB,
-        "ready": not missing,
-        "gpu_ready": bool(not missing and torch_runtime["cuda_available"] and torch_runtime["cuda_version"]),
+        "ready": bool(primary_ready or fallback_ready),
+        "primary_ready": primary_ready,
+        "fallback_ready": fallback_ready,
+        "backend": "whisperx" if primary_ready else ("faster-whisper" if fallback_ready else "none"),
+        "gpu_ready": bool((primary_ready or fallback_ready) and torch_runtime["cuda_available"] and torch_runtime["cuda_version"]),
         "missing": missing,
         "packages": probes,
         "torch_runtime": torch_runtime,
@@ -109,6 +115,13 @@ def build_error_message(
         lines.extend([
             "يوجد تعارض بين Transformers وhuggingface-hub داخل بيئة التفريغ.",
             "نفّذ من مجلد المشروع: uv pip install --python .\\.venv\\Scripts\\python.exe --upgrade \\\"huggingface-hub>=0.34.0,<1.0\\\"",
+        ])
+    if report.get("fallback_ready"):
+        lines.append("يتوفر faster-whisper كمسار احتياطي مستقل؛ شغّل OUSSAMA مجدداً بعد تثبيته لاستخدامه تلقائياً.")
+    else:
+        lines.extend([
+            "لتجنب توقف التفريغ عند تعطل WhisperX، ثبّت المسار الاختياري faster-whisper من requirements-transcribe-fallback.txt.",
+            "    .\\.venv\\Scripts\\python.exe -m scripts.transcription_diagnostics --repair-fallback",
         ])
     lines.extend([
         "هذا لا يعني أن المشروع تالف؛ وضع المونتاج والأمان يعملان بدون حزمة التفريغ.",
@@ -167,6 +180,23 @@ def _run_install(command: list[str], timeout: int = 1800) -> Dict[str, Any]:
     }
 
 
+def repair_fallback(base_dir: Optional[str] = None) -> Dict[str, Any]:
+    """Install only the independent faster-whisper recovery backend."""
+    requirement_file = os.path.join(APP_ROOT, "requirements-transcribe-fallback.txt")
+    if not os.path.exists(requirement_file):
+        return {"ok": False, "mode": "fallback", "steps": [], "error": "requirements-transcribe-fallback.txt is missing"}
+    steps = [_run_install(_pip_command(["--upgrade", "-r", requirement_file]))]
+    final = diagnose(base_dir=base_dir)
+    ok = bool(final.get("fallback_ready"))
+    return {
+        "ok": ok,
+        "mode": "fallback",
+        "diagnostic": final,
+        "steps": steps,
+        "error": "" if ok else "faster-whisper was not importable after installation",
+    }
+
+
 def repair(mode: str = "cpu", base_dir: Optional[str] = None) -> Dict[str, Any]:
     """Install the transcription stack explicitly in CPU or NVIDIA CUDA mode."""
     mode = str(mode or "cpu").lower().strip()
@@ -212,11 +242,17 @@ def repair(mode: str = "cpu", base_dir: Optional[str] = None) -> Dict[str, Any]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="OUSSAMA Cutter transcription diagnostics")
-    parser.add_argument("--repair", choices=["cpu", "gpu"], help="install the transcription stack")
+    parser.add_argument("--repair", choices=["cpu", "gpu"], help="install the WhisperX transcription stack")
+    parser.add_argument("--repair-fallback", action="store_true", help="install only the faster-whisper fallback")
     parser.add_argument("--report", help="write JSON report to this folder")
     parser.add_argument("--json", action="store_true", help="print machine-readable output")
     args = parser.parse_args(argv)
-    result = repair(args.repair) if args.repair else {"ok": diagnose()["ready"], "diagnostic": diagnose()}
+    if args.repair_fallback:
+        result = repair_fallback()
+    elif args.repair:
+        result = repair(args.repair)
+    else:
+        result = {"ok": diagnose()["ready"], "diagnostic": diagnose()}
     if args.report:
         path = write_report(args.report)
         result["report_path"] = path

@@ -12,8 +12,8 @@
 
 [project]
 name = "oussama-cutter"
-# PEP 440-compatible distribution version; the UI displays 7.24.0-pro.
-version = "7.24.0+pro"
+# PEP 440-compatible distribution version; the UI displays 7.25.0-pro.
+version = "7.25.0+pro"
 description = "OUSSAMA Cutter — استوديو عربي احترافي لتحويل الفيديوهات الطويلة إلى مقاطع قصيرة مع المونتاج الذكي والترجمة والأمان قبل النشر."
 readme = "README.md"
 requires-python = ">=3.9,<3.13"

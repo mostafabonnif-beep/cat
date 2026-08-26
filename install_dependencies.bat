@@ -19,13 +19,16 @@ set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 rem Parse all optional arguments without interactive prompts or fragile cmd blocks.
 set "GPU_MODE=cpu"
 set "INSTALL_TRANSCRIBE=0"
+set "INSTALL_FALLBACK=0"
 set "INSTALL_UPLOAD=0"
 set "UPLOAD_FAILED=0"
 set "TRANSCRIPTION_FAILED=0"
+set "TRANSCRIPTION_FALLBACK_FAILED=0"
 :PARSE_ARGS
 if "%~1"=="" goto ARGS_DONE
 if /I "%~1"=="gpu" set "GPU_MODE=cuda"
 if /I "%~1"=="full" set "INSTALL_TRANSCRIBE=1"
+if /I "%~1"=="fallback" set "INSTALL_FALLBACK=1"
 if /I "%~1"=="upload" set "INSTALL_UPLOAD=1"
 shift
 goto PARSE_ARGS
@@ -101,6 +104,7 @@ if not errorlevel 1 echo Deno JavaScript runtime detected for YouTube.
 if errorlevel 1 echo [INFO] Deno not found. Install Deno 2.3+ or use yt-dlp with another supported JS runtime if YouTube shows HTTP 403.
 
 if "%INSTALL_TRANSCRIBE%"=="1" goto INSTALL_WHISPERX
+if "%INSTALL_FALLBACK%"=="1" goto INSTALL_FASTER_FALLBACK
 goto CHECK_FFMPEG
 
 :INSTALL_WHISPERX
@@ -125,12 +129,24 @@ if errorlevel 1 goto TRANSCRIPTION_TORCH_FAILED
 if errorlevel 1 if /I "%GPU_MODE%"=="cuda" goto GPU_VERIFY_FAILED
 "%PYTHON%" -c "import torch, torchaudio, whisperx" >nul 2>&1
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
+if "%INSTALL_FALLBACK%"=="1" goto INSTALL_FASTER_FALLBACK
+goto CHECK_FFMPEG
+
+:INSTALL_FASTER_FALLBACK
+echo.
+echo [optional] Installing faster-whisper fallback...
+uv pip install --python "%PYTHON%" --no-cache -r requirements-transcribe-fallback.txt
+if errorlevel 1 set "TRANSCRIPTION_FALLBACK_FAILED=1"
+if "%TRANSCRIPTION_FALLBACK_FAILED%"=="1" goto CHECK_FFMPEG
+"%PYTHON%" -c "import faster_whisper" >nul 2>&1
+if errorlevel 1 set "TRANSCRIPTION_FALLBACK_FAILED=1"
 goto CHECK_FFMPEG
 
 :GPU_VERIFY_FAILED
 set "TRANSCRIPTION_FAILED=1"
 echo [ERROR] CUDA Torch is installed but RTX/CUDA is not available to Python.
 echo [INFO] Check the NVIDIA driver, then run the diagnostics command.
+if "%INSTALL_FALLBACK%"=="1" goto INSTALL_FASTER_FALLBACK
 goto CHECK_FFMPEG
 
 :CHECK_FFMPEG
@@ -186,6 +202,7 @@ echo OUSSAMA Cutter Lightweight WebUI mode is ready.
 echo Start with: run_webui.bat or run_webui_on_d.ps1
 echo Full transcription: install_dependencies.bat full (CPU)
 echo NVIDIA transcription: install_dependencies.bat gpu full
+echo Optional transcription recovery: install_dependencies.bat fallback (or gpu fallback)
 echo YouTube OAuth: install_dependencies.bat upload
 if "%VIRALCUTTER_NO_PAUSE%"=="1" goto CLEAN_DONE
 pause

@@ -9,7 +9,8 @@ def test_diagnostics_is_json_serializable():
     report = diagnose(".")
     assert report["app"] == "OUSSAMA Cutter"
     assert isinstance(report["packages"], dict)
-    assert set(report["packages"]) == {"torch", "torchaudio", "whisperx"}
+    assert set(report["packages"]) == {"torch", "torchaudio", "whisperx", "faster_whisper"}
+    assert report["backend"] in {"none", "whisperx", "faster-whisper"}
 
 
 def test_missing_stack_message_is_actionable():

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Light", "Full", "Gpu", "Upload")]
+    [ValidateSet("Light", "Full", "Gpu", "Upload", "Fallback")]
     [string]$Mode = "Light",
     [ValidateSet("cpu", "gpu", "none")]
     [string]$Transcription = "cpu",
@@ -35,6 +35,7 @@ switch ($Mode) {
     "Full"   { $BatArgs = @("full") }
     "Gpu"    { $BatArgs = @("gpu", "full") }
     "Upload" { $BatArgs = @("upload") }
+    "Fallback" { $BatArgs = @("fallback") }
 }
 if ($Mode -in @("Full", "Gpu") -and $Transcription -eq "gpu") {
     $BatArgs = @("gpu", "full")

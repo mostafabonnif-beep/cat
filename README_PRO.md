@@ -1,4 +1,4 @@
-# OUSSAMA Cutter 7.24.0-pro
+# OUSSAMA Cutter 7.25.0-pro
 
 This build is based on the uploaded ViralCutter source and includes a
 production-oriented reliability layer.
@@ -11,6 +11,10 @@ production-oriented reliability layer.
 - `webui/editor_core.py`
 - `webui/render_queue.py`
 - `webui/telegram_control.py` (optional local Telegram queue control)
+
+## Resilient transcription backend
+
+The primary WhisperX + Torch path remains preferred. If it is unavailable or its dependency stack is broken, install the optional `requirements-transcribe-fallback.txt` profile and use `VIRALCUTTER_TRANSCRIPTION_BACKEND=auto` (default) or `faster-whisper` to force the independent local backend. Placeholder subtitles remain disabled by default.
 
 ## Security
 - API keys are not put in WebUI child-process argv.

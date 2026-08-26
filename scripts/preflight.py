@@ -60,6 +60,8 @@ REQ_FILES = {
     "requirements.txt": ("Core", False, "required for the app to boot"),
     "requirements-transcribe.txt": ("Transcription (whisperx + torch)", True,
                                     "needed for the FULL YouTube->shorts pipeline (~2 GB)"),
+    "requirements-transcribe-fallback.txt": ("Transcription fallback (faster-whisper)", True,
+                                              "optional recovery path when WhisperX is unavailable"),
     "requirements-upload.txt": ("Upload (YouTube OAuth)", True,
                                 "needed only for direct uploads"),
 }
@@ -69,6 +71,7 @@ DIST_TO_MODULE = {
     "yt-dlp": "yt_dlp",
     "opencv-python": "cv2",
     "ffmpeg-python": "ffmpeg",
+    "faster-whisper": "faster_whisper",
     "google-genai": "google.genai",
     "google-generativeai": "google.generativeai",
     "google-api-python-client": "googleapiclient",

@@ -329,24 +329,103 @@ def resolve_model_candidates(model_name):
     return candidates
 
 
+def _transcription_backend_preference():
+    """Return a validated backend preference without importing either stack."""
+    preference = os.getenv("VIRALCUTTER_TRANSCRIPTION_BACKEND", "auto").strip().lower()
+    return preference if preference in {"auto", "whisperx", "faster-whisper"} else "auto"
+
+
+def _run_faster_whisper_fallback(
+    input_file,
+    model_name,
+    project_folder,
+    device,
+    srt_file,
+    tsv_file,
+    json_file,
+    cache_path,
+):
+    """Run the optional independent backend and persist pipeline-compatible outputs."""
+    from scripts import transcription_fallback
+
+    probe = transcription_fallback.availability()
+    if not probe.get("ok"):
+        raise ImportError(probe.get("error") or "faster-whisper is unavailable")
+    result = _run_with_heartbeat(
+        "جاري التفريغ الاحتياطي عبر faster-whisper",
+        lambda: transcription_fallback.transcribe(
+            input_file,
+            model_name=model_name,
+            device=device,
+            progress=None,
+        ),
+        stage="transcribe",
+        start_percent=25,
+        end_percent=94,
+    )
+    transcription_fallback.write_outputs(result, srt_file, tsv_file, json_file)
+    _save_transcription_cache(
+        cache_path,
+        input_file,
+        model_name,
+        srt_file,
+        tsv_file,
+        json_file,
+        device=device,
+    )
+    print("[transcribe] Backend: faster-whisper fallback", flush=True)
+    return srt_file, tsv_file
+
+
 def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='auto'):
-    if whisperx is None or torch is None:
-        msg = build_error_message(
-            whisperx_error=_WHISPERX_IMPORT_ERROR,
-            torch_error=_TORCH_IMPORT_ERROR,
-            base_dir=project_folder,
-        )
-        if not _placeholder_allowed():
-            raise TranscriptionUnavailableError(msg)
-        print("[transcribe] WARNING: " + msg)
-        print("[transcribe] Placeholder subtitles will be generated \u2014 viral-segment "
-              "selection will NOT work; only downstream tooling can be tested.")
+    backend_preference = _transcription_backend_preference()
+    primary_missing = whisperx is None or torch is None
+    use_fallback = backend_preference == "faster-whisper" or (
+        backend_preference == "auto" and primary_missing
+    )
+    if primary_missing or use_fallback:
         output_folder = project_folder or os.path.dirname(input_file) or 'tmp'
         os.makedirs(output_folder, exist_ok=True)
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         srt_file = os.path.join(output_folder, f"{base_name}.srt")
         tsv_file = os.path.join(output_folder, f"{base_name}.tsv")
         json_file = os.path.join(output_folder, f"{base_name}.json")
+        cache_path = _transcription_cache_path(output_folder)
+        cache = _read_transcription_cache(cache_path)
+        if _cache_matches(cache, input_file, model_name, srt_file, tsv_file, json_file, device=device):
+            print("Transcrição de fallback já em cache. Reutilizando JSON/SRT/TSV existentes.")
+            return srt_file, tsv_file
+        if use_fallback:
+            try:
+                return _run_faster_whisper_fallback(
+                    input_file,
+                    model_name,
+                    output_folder,
+                    device,
+                    srt_file,
+                    tsv_file,
+                    json_file,
+                    cache_path,
+                )
+            except Exception as error:
+                print(f"[transcribe] faster-whisper fallback indisponível: {error}")
+                msg = build_error_message(
+                    whisperx_error=_WHISPERX_IMPORT_ERROR,
+                    torch_error=_TORCH_IMPORT_ERROR,
+                    base_dir=project_folder,
+                )
+                msg += "\nمحاولة faster-whisper الاحتياطية فشلت: {}".format(error)
+        else:
+            msg = build_error_message(
+                whisperx_error=_WHISPERX_IMPORT_ERROR,
+                torch_error=_TORCH_IMPORT_ERROR,
+                base_dir=project_folder,
+            )
+        if not _placeholder_allowed():
+            raise TranscriptionUnavailableError(msg)
+        print("[transcribe] WARNING: " + msg)
+        print("[transcribe] Placeholder subtitles will be generated \u2014 viral-segment "
+              "selection will NOT work; only downstream tooling can be tested.")
         placeholder = {"segments": [{"start": 0.0, "end": 2.0, "text": "WhisperX not installed. Install it for full transcription."}], "language": "en"}
         with open(srt_file, 'w', encoding='utf-8') as f:
             f.write("1\n00:00:00,000 --> 00:00:02,000\nWhisperX not installed. Install it for full transcription.\n")
@@ -354,7 +433,7 @@ def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='
             f.write("start\tend\ttext\n0.0\t2.0\tWhisperX not installed. Install it for full transcription.\n")
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(placeholder, f, ensure_ascii=False, indent=2)
-        _save_transcription_cache(_transcription_cache_path(output_folder), input_file, model_name, srt_file, tsv_file, json_file, device=device)
+        _save_transcription_cache(cache_path, input_file, model_name, srt_file, tsv_file, json_file, device=device)
         return srt_file, tsv_file
     print(i18n(f"Iniciando transcrição de {input_file}..."))
     if torch is None:

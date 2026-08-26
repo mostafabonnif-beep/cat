@@ -1,4 +1,4 @@
-# قائمة إصدار Windows — OUSSAMA Cutter 7.24.0-pro
+# قائمة إصدار Windows — OUSSAMA Cutter 7.25.0-pro
 
 > هذه القائمة تفصل بين ما يمكن اختباره آلياً على خادم Linux وما يجب اختباره على جهاز Windows الحقيقي. لا ترسل مفاتيح Gemini أو `client_secrets.json` أو `token.json` عند طلب المساعدة.
 
@@ -59,8 +59,11 @@ Get-Content .\windows_diagnostics.json
 | فشل القص | تجربة segment فاشل توقف المرحلة ولا تنتج رسالة نجاح أو ترفع دفعة ناقصة |
 | حالة الطابور التالفة | عند تلف `.batch_queue.json` تُحفظ نسخة `queue.json.corrupt-*` ويظهر تحذير في ملخص الطابور |
 | Telegram Control Center | عند تركه معطلاً لا يبدأ polling؛ وعند تفعيله تظهر بطاقة ready وعدد Chat IDs فقط، ولا يظهر Token |
+| استمرارية التفريغ | عند غياب WhisperX/Torch، ثبّت `requirements-transcribe-fallback.txt` أو نفّذ `--repair-fallback`؛ يجب أن يظهر `fallback_ready=true` وأن تُنتج SRT/TSV/JSON صالحة |
+| اختيار backend | `auto` يفضّل WhisperX، و`VIRALCUTTER_TRANSCRIPTION_BACKEND=faster-whisper` يفرض المسار المستقل؛ لا يُسمح بplaceholder في الإنتاج |
 | أوامر Telegram | `/status` و`/projects` و`/audit` وpause/resume/retry/cancel تعمل للطابور المحلي فقط؛ الإلغاء الجماعي يحتاج تأكيداً خلال 60 ثانية |
 | إشعارات Telegram | تبقى معطلة افتراضياً؛ عند تفعيلها يصل status قصير للمهام الجديدة فقط دون ملفات أو مسارات أو logs |
+| اختبار fallback | شغّل فيديو عربي قصير على Windows، وسجّل backend الفعلي وزمن التفريغ وصحة timestamps قبل اعتماد الإنتاج |
 
 ## 4. اختبار معالجة محلية آمنة
 

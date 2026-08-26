@@ -15,7 +15,7 @@ def test_windows_diagnostics_is_json_serializable(tmp_path):
 def test_windows_diagnostics_contains_runtime_checks(tmp_path):
     report = collect(tmp_path)
     names = {item["name"] for item in report["checks"]}
-    assert {"Python", "Project root", "Project drive space", "Torch", "WhisperX", "google-auth-oauthlib"} <= names
+    assert {"Python", "Project root", "Project drive space", "Torch", "WhisperX", "Faster-whisper fallback", "google-auth-oauthlib"} <= names
     text = render(report)
     assert "OUSSAMA Cutter Windows diagnostics" in text
     assert "Summary:" in text
