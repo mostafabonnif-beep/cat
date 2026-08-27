@@ -2392,6 +2392,21 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 except (OSError, ValueError, TypeError):
                     lines.append("ℹ️ لا يوجد polish_report صالح لهذا المشروع.")
 
+                audio_qc_path = os.path.join(project_path, "audio_qc_report.json")
+                try:
+                    with open(audio_qc_path, "r", encoding="utf-8") as stream:
+                        audio_qc = json.load(stream) or {}
+                    audio_summary = audio_qc.get("summary") or {}
+                    lines.append("Audio QC: status={}، pass={}، review={}، block={}".format(
+                        audio_qc.get("status", "unknown"),
+                        audio_summary.get("pass", 0),
+                        audio_summary.get("review", 0),
+                        audio_summary.get("block", 0)))
+                    if audio_qc.get("status") != "pass":
+                        lines.append("⛔ لا يُسمح بالرفع الحقيقي لهذا الملف قبل معالجة ملاحظات Audio QC.")
+                except (OSError, ValueError, TypeError):
+                    lines.append("⚠️ لا يوجد audio_qc_report.json صالح؛ سيُجرى الفحص تلقائياً عند الرفع الحقيقي.")
+
                 tracking_path = os.path.join(project_path, "tracking_report.json")
                 try:
                     with open(tracking_path, "r", encoding="utf-8") as stream:

@@ -1,5 +1,11 @@
 # سجل تغييرات OUSSAMA Cutter
 
+# إصدار OUSSAMA Cutter 7.26.0-pro — Audio QC احترافي عبر FFmpeg
+
+يضيف هذا الإصدار فحصاً محلياً للملفات النهائية بعد الترجمة وإعادة التأطير. يقيس وجود الصوت، مدة الملف، integrated loudness، true peak، ونسبة الصمت، ويكتب `audio_qc_report.json` بحالات `pass` و`review` و`block`. الوضع الافتراضي تحذيري كي لا تتوقف المعالجة المحلية، لكن الرفع الحقيقي يرفض أي ملف لا يملك نتيجة `pass` قبل OAuth أو YouTube API.
+
+يمكن تشغيل الفحص يدوياً عبر `python -m scripts.audio_qc --project <project>` أو جعل pipeline صارماً عبر `--audio-qc-gate block`. عند إعادة القص يُحذف التقرير القديم مع المخرجات اللاحقة. لا توجد dependency جديدة؛ يعتمد الإصدار على FFmpeg الموجود مسبقاً.
+
 # إصدار OUSSAMA Cutter 7.25.1-pro — إصلاح مخرجات التفريغ والاستئناف
 
 يعالج هذا الإصدار إدخالات SRT وTSV وJSON ذات timestamps لكن بلا نص عند استئناف checkpoint قديم. تُزال الصفوف الفارغة فقط بكتابة ذرية، وإذا بقيت timestamps تالفة أو فشل التحقق مع marker مكتمل، يمسح OUSSAMA marker التفريغ والـcache ويعيد التفريغ مرة واحدة فقط. لا تُخفى عيوب timestamps ولا يُسمح بتمرير transcript غير صالح إلى اختيار المقاطع.

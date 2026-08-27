@@ -39,6 +39,22 @@ def test_safety_and_risk_are_reflected_in_report(tmp_path):
     assert report["readiness"]["errors"]
 
 
+def test_audio_qc_is_reflected_in_readiness_and_html(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "audio_qc_report.json").write_text(json.dumps({
+        "status": "review",
+        "summary": {"total": 2, "pass": 1, "review": 1, "block": 0},
+    }), encoding="utf-8")
+    report = build_report(str(project))
+    assert report["audio_qc"]["status"] == "review"
+    assert report["audio_qc"]["review"] == 1
+    assert any("Audio QC" in error for error in report["readiness"]["errors"])
+    html = render_html(report)
+    assert "فحص جودة الصوت" in html
+    assert "review" in html
+
+
 def test_write_report_creates_json_and_html(tmp_path):
     project = tmp_path / "project"
     project.mkdir()

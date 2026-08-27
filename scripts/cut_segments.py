@@ -188,7 +188,7 @@ def _clear_downstream_artifacts(project_folder):
             except OSError as exc:
                 print(f"[WARN] Could not remove stale downstream artifact {path}: {exc}")
     for name in (
-        "polish_report.json", "tracking_report.json", "face_modes.json",
+        "polish_report.json", "audio_qc_report.json", "tracking_report.json", "face_modes.json",
         "publish_batch_report.json", "project_report.html", "project_report.json",
     ):
         path = os.path.join(project_folder, name)

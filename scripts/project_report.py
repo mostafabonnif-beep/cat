@@ -130,6 +130,20 @@ def _polish_summary(data: Optional[dict]) -> Dict[str, Any]:
     }
 
 
+def _audio_qc_summary(data: Optional[dict]) -> Dict[str, Any]:
+    summary = data.get("summary") if isinstance(data, dict) else {}
+    summary = summary if isinstance(summary, dict) else {}
+    status = str((data or {}).get("status", "unknown")) if isinstance(data, dict) else "unknown"
+    return {
+        "present": bool(data),
+        "status": status,
+        "total": int(summary.get("total", 0) or 0),
+        "pass": int(summary.get("pass", 0) or 0),
+        "review": int(summary.get("review", 0) or 0),
+        "block": int(summary.get("block", 0) or 0),
+    }
+
+
 def _tracking_summary(data: Optional[dict]) -> Dict[str, Any]:
     data = data if isinstance(data, dict) else {}
     return {
@@ -178,6 +192,8 @@ def build_report(project_folder: str) -> Dict[str, Any]:
     publish = _read_publish_history(os.path.join(project_folder, "publish_history.jsonl"))
     polish_data = _load_json(os.path.join(project_folder, "polish_report.json"))
     polish = _polish_summary(polish_data)
+    audio_qc_data = _load_json(os.path.join(project_folder, "audio_qc_report.json"))
+    audio_qc = _audio_qc_summary(audio_qc_data)
     batch_publish = _batch_publish_summary(
         _load_json(os.path.join(project_folder, "publish_batch_report.json")))
     tracking = _tracking_summary(
@@ -197,7 +213,7 @@ def build_report(project_folder: str) -> Dict[str, Any]:
         for name in (
             "input.mp4", "viral_segments.txt", "safety_report.json",
             "risk_scorecard.json", "content_guard_report.json", "publish_blocklist.json", "checkpoint.json",
-            "polish_report.json", "publish_batch_report.json", "tracking_report.json", "cuts_manifest.json",
+            "polish_report.json", "audio_qc_report.json", "publish_batch_report.json", "tracking_report.json", "cuts_manifest.json",
         )
     ]
     errors = []
@@ -215,6 +231,8 @@ def build_report(project_folder: str) -> Dict[str, Any]:
         errors.append("automatic YouTube publishing is locked after a recorded policy incident")
     if polish.get("present") and (polish["fallback"] or polish["failed"] or polish["degraded"]):
         errors.append("professional polish has fallback/degraded clips; review polish_report.json before real publishing")
+    if audio_qc.get("present") and audio_qc.get("status") != "pass":
+        errors.append("Audio QC requires review before publishing (status: {})".format(audio_qc.get("status")))
     if batch_publish.get("present") and (batch_publish["failed"] or batch_publish["blocked"]):
         errors.append("the last publish batch has failed or blocked clips; retry only those after review")
     if tracking.get("present") and tracking.get("requested_active_speaker") and not tracking.get("active_speaker_applied"):
@@ -257,6 +275,7 @@ def build_report(project_folder: str) -> Dict[str, Any]:
             "last_batch": batch_publish,
         },
         "polish": polish,
+        "audio_qc": audio_qc,
         "tracking": tracking,
         "artifacts": artifacts,
     }
@@ -266,6 +285,23 @@ def _cell(value: Any) -> str:
     if isinstance(value, bool):
         value = "نعم" if value else "لا"
     return html.escape(str(value if value is not None else "—"))
+
+
+def _audio_qc_rows(audio_qc: Dict[str, Any]) -> str:
+    if not audio_qc.get("present"):
+        return ""
+    items = [
+        ("الحالة", audio_qc.get("status")),
+        ("الإجمالي", audio_qc.get("total")),
+        ("ناجح", audio_qc.get("pass")),
+        ("مراجعة", audio_qc.get("review")),
+        ("محجوب", audio_qc.get("block")),
+    ]
+    rows = "".join(
+        "<tr><td>{}</td><td>{}</td></tr>".format(_cell(k), _cell(v))
+        for k, v in items
+    )
+    return "<div class='card'><h2>فحص جودة الصوت (Audio QC)</h2><table>{}</table></div>".format(rows)
 
 
 def _tracking_rows(tracking: Dict[str, Any]) -> str:
@@ -323,6 +359,7 @@ def render_html(report: Dict[str, Any]) -> str:
     media = report.get("media", {})
     risk = report.get("risk", {})
     tracking = report.get("tracking", {}) or {}
+    audio_qc = report.get("audio_qc", {}) or {}
     status = "جاهز للنشر" if readiness.get("ready_for_publish") else "يتطلب مراجعة"
     error_rows = "".join("<li>{}</li>".format(_cell(error)) for error in readiness.get("errors", []))
     media_rows = "".join(
@@ -340,8 +377,10 @@ def render_html(report: Dict[str, Any]) -> str:
 <div class="card"><h2>ملخص السلامة والمخاطر</h2><table><tr><th>البند</th><th>القيمة</th></tr><tr><td>مقاطع السلامة المفحوصة</td><td>{safety_total}</td></tr><tr><td>محجوبة</td><td>{blocked}</td></tr><tr><td>تحتاج مراجعة يدوية</td><td>{review}</td></tr><tr><td>حظر بطاقة المخاطر</td><td>{risk_blocked}</td></tr></table></div>
 <div class="card"><h2>الملفات النهائية</h2><p>الإجمالي: {media_count} — الصالح: {media_valid} — غير الصالح: {media_invalid}</p><table><tr><th>الملف</th><th>المدة</th><th>صالح</th><th>الملاحظات</th></tr>{media_rows}</table></div>
 <div class="card"><h2>المشكلات التي تمنع النشر</h2><ul>{errors}</ul></div>
-{tracking_html}
-{originality_html}
+        {audio_qc_html}
+        {tracking_html}
+        {originality_html}
+
 {publishing_html}
 </body></html>""".format(
         cls="ok" if readiness.get("ready_for_publish") else "bad",
@@ -352,6 +391,7 @@ def render_html(report: Dict[str, Any]) -> str:
         media_valid=_cell(media.get("valid", 0)), media_invalid=_cell(media.get("invalid", 0)),
         media_rows=media_rows or "<tr><td colspan='4'>لا توجد ملفات نهائية</td></tr>",
         errors=error_rows or "<li class='ok'>لا توجد مشكلات مسجلة</li>",
+        audio_qc_html=_audio_qc_rows(audio_qc),
         tracking_html=_tracking_rows(tracking),
         originality_html=_originality_rows(report),
         publishing_html=_publishing_rows(report),

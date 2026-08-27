@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-847%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-855%20passed-brightgreen)](tests/)
 
 **البديل المفتوح المصدر المجاني 100% لـ Opus Clip — يعمل محلياً وبلا حدود**
 حوّل فيديوهات يوتيوب الطويلة إلى مقاطع قصيرة فيروسية جاهزة لـ TikTok وInstagram Reels وYouTube Shorts — بذكاء اصطناعي متقدم، وترجمات ديناميكية، وتتبع دقيق للوجه، وترجمة تلقائية. كل شيء يعمل على جهازك.
@@ -37,7 +37,8 @@
 
 - 🤖 **قص فيروسي بالذكاء الاصطناعي**: يحدد تلقائياً الخطافات (hooks) وأكثر اللحظات تفاعلاً باستخدام **Gemini** أو **GPT-4** أو **نماذج محلية (Llama 3، DeepSeek، إلخ)**.
 - 🛡️ **فلتر الأمان ضد مخالفات يوتيوب (جديد!)**: يفحص نص كل مقطع مقترح و**يمنع تلقائياً** المقاطع التي تحتوي على **الكلام الذي يحضّ على الكراهية** — إما بحذف المقطع أو **بكتم الكلمة المخالفة فقط (Bleep)** مع الإبقاء على المقطع. طبقة إضافية بمراجعة سياقية عبر الذكاء الاصطناعي + تقرير `safety_report.json` لكل مشروع.
-- 🗣️ **نسخ صوتي فائق الدقة**: مبني على **WhisperX** مع تسريع GPU لترجمات مثالية التوقيت.
+- 🗣️ **نسخ صوتي فائق الدقة**: مبني على **WhisperX** مع تسريع GPU وترجمة مثالية التوقيت، مع `faster-whisper` كمسار احتياطي مستقل.
+- 🔊 **فحص جودة الصوت (Audio QC)**: يقيس loudness وtrue peak والصمت في الملفات النهائية عبر FFmpeg، ويكتب `audio_qc_report.json` ويمنع الرفع الحقيقي عند وجود مشكلة تحتاج مراجعة.
 - 🎨 **ترجمات ديناميكية**: بأسلوب "Hormozi" مع تمييز كلمة بكلمة، ألوان نابضة، وتخصيص كامل (خط، لون، إطار، ظل).
 - 🎥 **إخراج كاميرا تلقائي**:
   - **قص تلقائي 9:16**: يحوّل الأفقي إلى عمودي مع الحفاظ على التركيز.
@@ -135,6 +136,9 @@ run_webui.bat
 > في Windows يمكن فرض المسار الاحتياطي مؤقتاً: `$env:VIRALCUTTER_TRANSCRIPTION_BACKEND="faster-whisper"`. الوضع الافتراضي `auto` يفضّل WhisperX ثم يستخدم fallback عند غيابه.
 >
 > ثم: `python main_improved.py --url "..." --platform tiktok --polish on`
+
+> لفحص جودة صوت مشروع موجود قبل النشر:
+> `python -m scripts.audio_qc --project "D:\SS\VIRALS\اسم_المشروع"`
 >
 > (الرفع المباشر لليوتيوب: `pip install -r requirements-upload.txt` — راجع قسم بوابة الرفع)
 
@@ -395,5 +399,5 @@ Research — مبني على مجموعات موسومة يدوياً من وس�
 - ✅ **تثبيت قابل للتكرار**: `uv sync` (يستخدم `uv.lock`)؛ تدفق `install_dependencies.bat` الكلاسيكي يعمل كما هو.
 
 
-**الإصدار الحالي**: 7.25.1-pro — هوية OUSSAMA Cutter مع Telegram محلي وfaster-whisper fallback وتشخيص مسبق آمن
+**الإصدار الحالي**: 7.26.0-pro — Audio QC محلي عبر FFmpeg، Telegram آمن، وfaster-whisper fallback
 *OUSSAMA Cutter: لأن المقاطع الفيروسية لا يجب أن تكلّف ثروة.*

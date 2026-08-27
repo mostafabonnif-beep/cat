@@ -190,6 +190,7 @@ class TestStreamUpload:
 
     def test_upload_flow(self, tmp_path, monkeypatch):
         project = _project(tmp_path)
+        monkeypatch.setattr(pp, "_audio_qc_upload_allowed", lambda *args: (True, ""))
         clip = os.path.join(project, "final", "000_clip.mp4")
         captured = {}
 
@@ -229,6 +230,20 @@ class TestStreamUpload:
         except StopIteration as stop:
             assert stop.value["status"] == "uploaded"
             assert stop.value["video"] == "001_clip.mp4"
+
+    def test_audio_qc_blocks_real_upload_before_uploader(self, tmp_path, monkeypatch):
+        project = _project(tmp_path)
+        clip = os.path.join(project, "final", "000_clip.mp4")
+        monkeypatch.setattr(pp, "_audio_qc_upload_allowed", lambda *args: (False, "Audio QC requires review"))
+
+        import scripts.upload_gate as ug
+        monkeypatch.setattr(
+            ug, "UPLOADERS",
+            {"youtube": lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("uploader must not be constructed"))},
+        )
+        updates = list(pp.stream_upload(project, "youtube", clip, "T", "C", [], False, "warn"))
+        assert any("Audio QC" in item for item in updates)
 
     def test_blocked_clip_reported(self, tmp_path, monkeypatch):
         project = _project(tmp_path)

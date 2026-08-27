@@ -43,7 +43,8 @@ def build_command(main_script_path, source_args, *, segments=None, viral=False,
                   title_language=None, music_check=None, music_gate=None,
                   output_aspect=None, reframe_mode=None, force_new_segments=False,
                   visual_check="auto", visual_gate="warn", visual_frames=None,
-                  visual_model=None, auto_download_visual=False):
+                  visual_model=None, auto_download_visual=False,
+                  audio_qc="on", audio_qc_gate="warn"):
     """Assemble the full CLI command for main_improved.py.
 
     `source_args` holds the input-source-specific flags already resolved by
@@ -186,6 +187,11 @@ def build_command(main_script_path, source_args, *, segments=None, viral=False,
         cmd.extend(["--visual-model", str(visual_model)])
     if auto_download_visual:
         cmd.append("--auto-download-visual")
+
+    if audio_qc and audio_qc != "on":
+        cmd.extend(["--audio-qc", str(audio_qc)])
+    if audio_qc_gate and audio_qc_gate != "warn":
+        cmd.extend(["--audio-qc-gate", str(audio_qc_gate)])
 
     # Force fresh viral segments instead of reusing viral_segments.txt (v6.16).
     if force_new_segments:

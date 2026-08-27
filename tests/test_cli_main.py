@@ -146,7 +146,7 @@ def test_main_help_exits_zero_and_lists_flags(cli, monkeypatch, capsys):
         cli.main()
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    for flag in ("--url", "--segments", "--ai-backend", "--workflow", "--face-mode"):
+    for flag in ("--url", "--segments", "--ai-backend", "--workflow", "--face-mode", "--audio-qc", "--audio-qc-gate"):
         assert flag in out
 
 

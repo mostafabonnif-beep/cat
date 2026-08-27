@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-847%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-855%20passed-brightgreen)](tests/)
 [![Discord](https://dcbadge.limes.pink/api/server/tAdPHFAbud)](https://discord.gg/tAdPHFAbud)<br>
 
 **OUSSAMA Cutter — alternativa open-source 100% gratuita, local e ilimitada ao Opus Clip**
@@ -41,6 +41,7 @@ Esqueça assinaturas caras e limites de minutos. OUSSAMA Cutter oferece poder il
 -   🤖 **Corte Viral com IA**: Identifica automaticamente os ganchos e momentos mais engajadores usando **Gemini**, **GPT-4** ou **LLMs Locais (Llama 3, DeepSeek, etc)**.
 -   🛡️ **Filtro de Segurança Anti-Strike (Novo!)**: Bloqueia clipes com **discurso de ódio / incitação à violência** antes do corte — ou apenas **censura (bleep) as palavras violadoras** mantendo o clipe. Revisão contextual extra via IA (Gemini/G4F). 100% local, multilíngue (árabe + dialetos, EN, PT, FR, ES, TR), com relatório `safety_report.json` por projeto.
 -   🗣️ **Transcrição Resiliente**: O caminho **WhisperX** continua sendo o principal; o `faster-whisper` opcional funciona como fallback local quando Torch/WhisperX estão indisponíveis.
+-   🔊 **Audio QC**: Mede loudness, true peak e silêncio nos clipes renderizados com FFmpeg, grava `audio_qc_report.json` e bloqueia publicação real quando houver revisão necessária.
 -   🎨 **Legendas Dinâmicas**: Estilo "Hormozi" com highlight palavra por palavra, cores vibrantes, emojis e total customização.
 -   🎥 **Direção de Câmera Automática**:
     -   **Auto-Crop 9:16**: Transforma horizontal em vertical mantendo o foco.
@@ -162,5 +163,5 @@ O ViralCutter é mantido pela comunidade. Junte-se a nós para democratizar a cr
 - ✅ **Instalação reproduzível**: `uv sync` (usa `uv.lock`); o fluxo clássico `install_dependencies.bat` continua igual.
 
 
-**Versão Atual**: 7.25.1-pro — Telegram local optional e fallback faster-whisper para transcrição resiliente
+**Versão Atual**: 7.26.0-pro — Audio QC local com FFmpeg, Telegram seguro e fallback faster-whisper
 *ViralCutter: Porque clips virais não precisam custar uma fortuna.* 🚀

@@ -270,6 +270,16 @@ def _publish_result(status, video_path, title="", publish_at=None, **extra):
     return result
 
 
+def _audio_qc_upload_allowed(project_path, video_path):
+    """Real uploads require a current, passing per-file Audio QC result."""
+    try:
+        from scripts import audio_qc
+        report = audio_qc.ensure_file_report(project_path, video_path)
+        return audio_qc.gate_allows(report)
+    except Exception as exc:
+        return False, "Audio QC failed closed: {}".format(str(exc)[:300])
+
+
 def _polish_upload_allowed(project_path, video_path):
     """Explicit final_polished selection must not bypass a failed report."""
     normal = os.path.normcase(os.path.abspath(video_path or ""))
@@ -324,6 +334,13 @@ def _upload_worker(project_path, platform, video_path, title, caption,
             finish(_publish_result("blocked", video_path, title, publish_at,
                                    error="public confirmation required", reason="public_confirmation"))
             return
+        if not dry_run:
+            audio_ok, audio_detail = _audio_qc_upload_allowed(project_path, video_path)
+            if not audio_ok:
+                emit("⛔ تم منع الرفع بسبب Audio QC: {}".format(audio_detail))
+                finish(_publish_result("blocked", video_path, title, publish_at,
+                                       error=audio_detail, reason="audio_qc"))
+                return
         from scripts import upload_gate as ug
         from webui import publish_history
         if platform == "youtube" and client_secrets_path:

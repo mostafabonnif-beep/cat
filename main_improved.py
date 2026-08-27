@@ -38,6 +38,7 @@ except Exception:
 
 from scripts import (
     adjust_subtitles,
+    audio_qc,
     burn_subtitles,
     censor_engine,
     checkpoint,
@@ -558,6 +559,10 @@ def main():
                         help="Auto-update the hate-speech word list from GitHub once a day (offline-safe). Default: on")
     parser.add_argument("--risk-scorecard", choices=["on", "off"], default="on",
                         help="Per-clip YouTube risk scorecard (reused-content / monetization / visual warnings) after rendering. Default: on")
+    parser.add_argument("--audio-qc", choices=["on", "off"], default="on",
+                        help="Measure rendered audio with FFmpeg and write audio_qc_report.json. Default: on")
+    parser.add_argument("--audio-qc-gate", choices=["warn", "block"], default="warn",
+                        help="Audio QC behavior: warn records review and lets local processing continue; block stops the pipeline on non-pass")
     parser.add_argument("--risk-gate", choices=["off", "warn", "block"], default="warn",
                         help="What to do when a clip fails the compliance gate: 'warn' prints warnings and writes publish_blocklist.json (default), 'block' stops the run, 'off' does nothing")
     parser.add_argument("--music-check", choices=["on", "off", "auto"], default="auto",
@@ -1595,6 +1600,46 @@ def main():
                     ok_n, len(results), args.output_aspect))
             except Exception as e:
                 print("[reframe] failed (continuing with the original aspect): {}".format(e))
+
+        # 6.45. Audio QC — measure the actual rendered clips before compliance
+        # scoring and publishing. The report is advisory for local processing,
+        # while publish_panel blocks non-pass clips on real uploads.
+        if workflow_choice != "3" and args.audio_qc == "on":
+            print(i18n("Running Audio QC on rendered clips..."), flush=True)
+            emit_progress("audio_qc", 97, "فحص جودة الصوت")
+            try:
+                audio_report = tracker.run(
+                    "audio_qc",
+                    audio_qc.analyze_project,
+                    project_folder,
+                )
+                if audio_report is None:
+                    audio_report = audio_qc.load_report(project_folder)
+                if audio_report is None:
+                    checkpoint.clear(project_folder, "audio_qc")
+                    audio_report = tracker.run(
+                        "audio_qc", audio_qc.analyze_project, project_folder)
+                audio_summary = (audio_report or {}).get("summary", {})
+                audio_status = (audio_report or {}).get("status", "block")
+                print("[audio-qc] status={} pass={} review={} block={} / {}".format(
+                    audio_status, audio_summary.get("pass", 0),
+                    audio_summary.get("review", 0), audio_summary.get("block", 0),
+                    audio_summary.get("total", 0)), flush=True)
+                if audio_status != "pass" and args.audio_qc_gate == "block":
+                    raise RuntimeError(
+                        "Audio QC gate blocked the run: status={}".format(audio_status))
+            except Exception as e:
+                if args.audio_qc_gate == "block":
+                    raise
+                print(i18n("Audio QC failed (review required before real publishing): {}").format(e), flush=True)
+        elif args.checkpoint == "on":
+            # The optional check is explicitly skipped, so old projects do not
+            # remain permanently pending when the user chose audio_qc=off or
+            # the workflow does not render video files.
+            try:
+                checkpoint.mark_done(project_folder, "audio_qc")
+            except Exception as exc:
+                debug("Could not mark Audio QC skipped: {}".format(exc))
 
         # 6.5. Risk Scorecard — per-clip compliance report (reused content /
         #      monetization / visual) + optional publish gate

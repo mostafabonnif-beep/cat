@@ -16,7 +16,7 @@ import time
 CHECKPOINT_FILENAME = "checkpoint.json"
 STAGES = [
     "download", "transcribe", "segments", "safety", "cut",
-    "edit", "polish", "subtitles", "scorecard", "music_check", "done",
+    "edit", "polish", "subtitles", "audio_qc", "scorecard", "music_check", "done",
 ]
 
 

@@ -12,8 +12,8 @@
 
 [project]
 name = "oussama-cutter"
-# PEP 440-compatible distribution version; the UI displays 7.25.1-pro.
-version = "7.25.1+pro"
+# PEP 440-compatible distribution version; the UI displays 7.26.0-pro.
+version = "7.26.0+pro"
 description = "OUSSAMA Cutter — استوديو عربي احترافي لتحويل الفيديوهات الطويلة إلى مقاطع قصيرة مع المونتاج الذكي والترجمة والأمان قبل النشر."
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
@@ -44,10 +44,12 @@ dependencies = [
 oussama-cutter = "main_improved:main"
 oussama-cutter-webui = "webui.app:_launch"
 oussama-cutter-report = "scripts.project_report:main"
+oussama-cutter-audio-qc = "scripts.audio_qc:main"
 # Compatibility aliases for existing installations and scripts.
 viralcutter = "main_improved:main"
 viralcutter-webui = "webui.app:_launch"
 viralcutter-report = "scripts.project_report:main"
+viralcutter-audio-qc = "scripts.audio_qc:main"
 
 [project.optional-dependencies]
 transcribe = [
