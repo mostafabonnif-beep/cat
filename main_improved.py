@@ -1139,21 +1139,61 @@ def main():
             emit_progress("transcribe", 22, device_info["message"])
             # Se skip config, args.model é default
             # GPU OOM guard (Roadmap 4.1) + checkpoint resume (Roadmap 4.2)
-            _transcribe_result = tracker.run(
-                "transcribe",
-                oom_guard.transcribe_with_fallback,
-                input_video, args.model,
-                project_folder=project_folder,
-                device=args.transcription_device)
+            def _run_transcription_stage():
+                return tracker.run(
+                    "transcribe",
+                    oom_guard.transcribe_with_fallback,
+                    input_video, args.model,
+                    project_folder=project_folder,
+                    device=args.transcription_device)
+
+            _transcribe_result = _run_transcription_stage()
+            base_name = os.path.splitext(os.path.basename(input_video))[0]
             if _transcribe_result is None:
-                # stage already completed in a previous run → reuse files
-                base_name = os.path.splitext(os.path.basename(input_video))[0]
+                # Stage was marked done in a previous run; validate and repair
+                # its artifacts before trusting the checkpoint.
                 srt_file = os.path.join(project_folder, base_name + ".srt")
                 tsv_file = os.path.join(project_folder, base_name + ".tsv")
             else:
                 srt_file, tsv_file = _transcribe_result
+            json_file = os.path.join(project_folder, base_name + ".json")
+            repair_report = transcription_validation.repair_transcription_artifacts(
+                srt_file, tsv_file, json_file)
+            if repair_report.get("changed"):
+                print("[transcribe] Removed {} empty transcript entries from existing artifacts.".format(
+                    repair_report.get("total_removed", 0)), flush=True)
             transcript_report = transcription_validation.validate_transcription(srt_file, tsv_file)
+
+            # A stale checkpoint must never make a corrupt transcript permanent.
+            # Clear its marker and retry once after removing all transcript
+            # artifacts; transcribe_video will then generate fresh outputs.
             if not transcript_report.get("ok"):
+                print("[transcribe] artifacts failed validation; retrying transcription once.", flush=True)
+                checkpoint.clear(project_folder, "transcribe")
+                for stale_path in (srt_file, tsv_file, json_file,
+                                   os.path.join(project_folder, "transcription_cache.json")):
+                    try:
+                        if os.path.isfile(stale_path):
+                            os.remove(stale_path)
+                    except OSError as error:
+                        print("[transcribe] Could not remove stale artifact {}: {}".format(
+                            stale_path, error), flush=True)
+                _transcribe_result = _run_transcription_stage()
+                if _transcribe_result is None:
+                    checkpoint.clear(project_folder, "transcribe")
+                    raise RuntimeError("Transcription retry did not produce fresh artifacts")
+                srt_file, tsv_file = _transcribe_result
+                json_file = os.path.join(project_folder, base_name + ".json")
+                repair_report = transcription_validation.repair_transcription_artifacts(
+                    srt_file, tsv_file, json_file)
+                if repair_report.get("changed"):
+                    print("[transcribe] Removed {} empty transcript entries after retry.".format(
+                        repair_report.get("total_removed", 0)), flush=True)
+                transcript_report = transcription_validation.validate_transcription(srt_file, tsv_file)
+
+            if not transcript_report.get("ok"):
+                # Do not leave a successful checkpoint behind a failed output.
+                checkpoint.clear(project_folder, "transcribe")
                 raise RuntimeError("Transcription output validation failed: {}".format(
                     "; ".join(transcript_report.get("errors", []))[:2000]))
             emit_progress("transcribe", 65, "تفريغ الصوت")

@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-846%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-847%20passed-brightgreen)](tests/)
 [![Discord](https://dcbadge.limes.pink/api/server/tAdPHFAbud)](https://discord.gg/tAdPHFAbud)<br>
 
 **OUSSAMA Cutter — alternativa open-source 100% gratuita, local e ilimitada ao Opus Clip**
@@ -162,5 +162,5 @@ O ViralCutter é mantido pela comunidade. Junte-se a nós para democratizar a cr
 - ✅ **Instalação reproduzível**: `uv sync` (usa `uv.lock`); o fluxo clássico `install_dependencies.bat` continua igual.
 
 
-**Versão Atual**: 7.25.0-pro — Telegram local opcional e fallback faster-whisper para transcrição resiliente
+**Versão Atual**: 7.25.1-pro — Telegram local optional e fallback faster-whisper para transcrição resiliente
 *ViralCutter: Porque clips virais não precisam custar uma fortuna.* 🚀

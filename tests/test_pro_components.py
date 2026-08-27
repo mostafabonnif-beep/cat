@@ -277,3 +277,47 @@ def test_render_queue_retry_failed_resets_selected_jobs(tmp_path):
     assert q.retry_failed([failed, done]) == [failed]
     assert q.snapshot(failed)["status"] == "queued"
     assert q.snapshot(done)["status"] == "succeeded"
+
+
+def test_transcription_repair_removes_empty_entries_from_all_artifacts(tmp_path):
+    from scripts.transcription_validation import (
+        repair_transcription_artifacts,
+        validate_transcription,
+    )
+
+    srt = tmp_path / "input.srt"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:02,000\nنص صالح\n\n"
+        "2\n00:00:02,000 --> 00:00:03,000\n\n",
+        encoding="utf-8",
+    )
+    tsv = tmp_path / "input.tsv"
+    tsv.write_text(
+        "start\tend\ttext\n"
+        "0.000\t2.000\tنص صالح\n"
+        "2.000\t3.000\t\n",
+        encoding="utf-8",
+    )
+    transcript_json = tmp_path / "input.json"
+    transcript_json.write_text(
+        json.dumps({
+            "language": "ar",
+            "segments": [
+                {"start": 0, "end": 2, "text": "نص صالح"},
+                {"start": 2, "end": 3, "text": ""},
+            ],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    report = repair_transcription_artifacts(str(srt), str(tsv), str(transcript_json))
+    assert report == {
+        "changed": True,
+        "removed": {"srt": 1, "tsv": 1, "json": 1},
+        "total_removed": 3,
+    }
+    validated = validate_transcription(str(srt), str(tsv))
+    assert validated["ok"] is True
+    assert validated["count"] == 1
+    assert "\t\n" not in tsv.read_text(encoding="utf-8")
+    assert '"text": ""' not in transcript_json.read_text(encoding="utf-8")

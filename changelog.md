@@ -1,6 +1,8 @@
 # سجل تغييرات OUSSAMA Cutter
 
-# إصدار OUSSAMA Cutter 7.25.0-pro — تفريغ صوتي مقاوم للأخطاء
+# إصدار OUSSAMA Cutter 7.25.1-pro — إصلاح مخرجات التفريغ والاستئناف
+
+يعالج هذا الإصدار إدخالات SRT وTSV وJSON ذات timestamps لكن بلا نص عند استئناف checkpoint قديم. تُزال الصفوف الفارغة فقط بكتابة ذرية، وإذا بقيت timestamps تالفة أو فشل التحقق مع marker مكتمل، يمسح OUSSAMA marker التفريغ والـcache ويعيد التفريغ مرة واحدة فقط. لا تُخفى عيوب timestamps ولا يُسمح بتمرير transcript غير صالح إلى اختيار المقاطع.
 
 تضيف هذه النسخة مساراً اختيارياً مستقلاً عبر **faster-whisper** فوق مسار WhisperX + Torch الأساسي. الوضع الافتراضي `auto` يفضّل WhisperX، ثم ينتقل إلى fallback عندما يتعذر استيراد WhisperX أو Torch. لا تضيف النسخة أي أمر Telegram لبدء pipeline أو رفع YouTube.
 
@@ -23,7 +25,7 @@ $env:VIRALCUTTER_TRANSCRIPTION_BACKEND="faster-whisper"
 
 ## التحقق
 
-أضيفت اختبارات لتطبيع segments والكلمات، الكتابة الذرية لـSRT/TSV/JSON، cache، اختيار backend، repair-fallback، وتشخيص Windows. نجح regression الكامل بعد التغيير بعدد **846 اختباراً**، كما نجح `ruff` و`compileall` و`uv lock --check`. الاختبار الفعلي لموديل faster-whisper وCUDA وTelegram وYouTube يجب أن يتم على جهاز Windows المستخدم.
+أضيفت اختبارات لتطبيع segments والكلمات، الكتابة الذرية لـSRT/TSV/JSON، cache، اختيار backend، repair-fallback، وتشخيص Windows. نجح regression الكامل بعد التغيير بعدد **847 اختباراً**، كما نجح `ruff` و`compileall` و`uv lock --check`. الاختبار الفعلي لموديل faster-whisper وCUDA وTelegram وYouTube يجب أن يتم على جهاز Windows المستخدم.
 
 ---
 
