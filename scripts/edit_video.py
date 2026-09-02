@@ -18,6 +18,7 @@ except ImportError:
     MEDIAPIPE_AVAILABLE = False
     print("MediaPipe not found. Install with: pip install mediapipe — will fall back to OpenCV Haar Cascade if needed.")
 from scripts.active_speaker import ActiveSpeakerSelector
+from scripts.face_tracker import FaceTracker
 from scripts.audio_analysis import get_audio_energy
 from scripts.media_validation import validate_media_file
 from scripts.one_face import (
@@ -715,6 +716,10 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     smoothing_total = 0
 
     smoothed_slots = 0  # how many face slots were smoothed last frame (v7.27)
+    # Identity tracker (v7.28): keeps per-face IDs across detection cycles so
+    # crop slots never swap people after a brief disappearance / gap.
+    face_tracker = FaceTracker(match_gate=0.75, max_missing_cycles=4,
+                               velocity_alpha=0.4)
     # Auto-mode face-count grace (v7.27): a 2-face layout survives brief
     # detection blips (2 quick re-detect cycles ~0.2s apart) instead of
     # popping to 1 face and back.
@@ -777,11 +782,12 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
         if frame_index >= next_detection_frame and len(transition_frames) == 0:
             # Detect faces
             faces = detect_faces_insightface(frame)
-            if faces:
-                scores = [f"{f.get('det_score',0):.2f}" for f in faces]
-                print(f"DEBUG: Frame {frame_index} | Raw Faces: {len(faces)} | Scores: {scores}")
-            else:
-                pass # print(f"DEBUG: Frame {frame_index} | No Raw Faces")
+            if os.environ.get("VIRALCUTTER_DEBUG_FACES") == "1":
+                if faces:
+                    scores = [f"{f.get('det_score',0):.2f}" for f in faces]
+                    print(f"DEBUG: Frame {frame_index} | Raw Faces: {len(faces)} | Scores: {scores}")
+                else:
+                    pass # print(f"DEBUG: Frame {frame_index} | No Raw Faces")
 
             # --- ACTIVITY / SPEAKER DETECTION ---
             # (Feature currently disabled for stability - relying on simple size checks)
@@ -811,7 +817,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                     # 2. Relative Size Filter
                     valid_faces = [f for f in faces if f['area'] > (filter_threshold * max_area)]
                     
-                    if len(valid_faces) < len(faces):
+                    if len(valid_faces) < len(faces) and os.environ.get("VIRALCUTTER_DEBUG_FACES") == "1":
                         print(f"DEBUG: Filtered {len(faces)-len(valid_faces)} small faces. Max Area: {max_area}. Filter Thresh: {filter_threshold}")
                     
                     faces = valid_faces
@@ -1092,6 +1098,11 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                          
                      buffered_frame = frame2 # Store for next iteration
 
+            # v7.28: update the identity tracker with the final face list
+            # (after lookahead), then use stable track IDs for layout slots.
+            track_ids = face_tracker.update(
+                frame_index, [f['bbox'] for f in faces] if faces else [])
+
             detections = []
             
             if len(faces) >= target_faces:
@@ -1135,9 +1146,23 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                         faces_sorted = sorted(faces, key=lambda f: f.get('effective_area', 0), reverse=True)
                 
                 if target_faces == 2:
-                    # Preserve the legacy proximity-aware two-speaker ordering.
-                    f1 = faces_sorted[0]['bbox']
-                    f2 = faces_sorted[1]['bbox']
+                    # Preserve the legacy proximity-aware two-speaker ordering,
+                    # but prefer the identity tracker's slot order: after a
+                    # 1-face gap the resumed 2-face layout must keep the same
+                    # person in slot 0 (no crop jump between speakers).
+                    pair = [faces_sorted[0], faces_sorted[1]]
+                    if track_ids and len(faces) >= 2:
+                        idmap = {}
+                        for _fi, _f in enumerate(faces):
+                            if _fi < len(track_ids):
+                                idmap[id(_f)] = track_ids[_fi]
+                        pair = sorted(
+                            pair,
+                            key=lambda _f: (0, idmap.get(id(_f)) or 0)
+                            if idmap.get(id(_f)) is not None else (1, 0),
+                        )
+                    f1 = pair[0]['bbox']
+                    f2 = pair[1]['bbox']
                     if last_detected_faces is not None and len(last_detected_faces) == 2:
                         detections = sort_by_proximity([f1, f2], last_detected_faces, get_center_bbox)
                     else:
