@@ -260,6 +260,35 @@ uv pip install --python .\.venv\Scripts\python.exe --upgrade "huggingface-hub>=0
 يجب أن يكون إصدار `huggingface-hub` أقل من 1.0، وأن تبقى `CUDA: True`. لا تستخدم `pip` داخل هذه البيئة إذا ظهر `No module named pip`؛ استخدم `uv pip --python` كما في الأمر أعلاه. رسالة الفيديو المقيد عمرياً منفصلة، وتعالج عبر كوكيز المتصفح بعد نجاح توافق الحزم.
 
 
+## إصلاح تعارض tokenizers مع WhisperX
+
+إذا ظهر الخطأ:
+
+```text
+ImportError: tokenizers>=0.22.0,<=0.23.0 is required for a normal functioning
+of this module, but found tokenizers==0.23.1.
+```
+
+فهذا تعارض إصدارات جديد داخل طبقة Transformers. الـ `transformers` المثبت (خط الإصدارات 4.x أو 5.14 وما دون — المرتبط بقيد `huggingface-hub<1.0` في هذا المشروع) يقبل `tokenizers` حتى 0.23.0 فقط، لكن البيئة حصلت على `tokenizers 0.23.1` أثناء ترقية جزئية.
+
+**ملاحظة مهمة:** `tokenizers 0.23.0` غير موجود على PyPI أصلاً — الإصدارات قفزت من `0.22.2` إلى `0.23.1`. لذلك الإصدار الصحيح المتوافق مع هذا المشروع هو `0.22.2`، وليس 0.23.0.
+
+للإصلاح الفوري من PowerShell:
+
+```powershell
+cd D:\SS
+uv pip install --python .\.venv\Scripts\python.exe --upgrade "tokenizers>=0.22.0,<0.23.1"
+```
+
+ثم تحقق من الاستيراد:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import huggingface_hub, transformers, tokenizers, whisperx, torch; print('huggingface-hub:', huggingface_hub.__version__); print('transformers:', transformers.__version__); print('tokenizers:', tokenizers.__version__); print('WhisperX: READY'); print('CUDA:', torch.cuda.is_available())"
+```
+
+يجب أن يكون إصدار `tokenizers` هو `0.22.2`، وأن تبقى `CUDA: True`. النسخ المحدثة من `requirements-transcribe.txt` و`install_dependencies.bat` تثبت هذا القيد تلقائياً (`tokenizers>=0.22.0,<0.23.1`) حتى لا يتكرر التعارض بعد إعادة التثبيت.
+
+
 ## عندما يبدو التفريغ متوقفاً بعد اكتشاف اللغة
 
 إذا ظهر السجل:

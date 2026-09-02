@@ -171,6 +171,8 @@ KNOWN_ERROR_HINTS = [
     # --- Transcription dependency conflicts must outrank generic YouTube hints ---
     ("huggingface-hub", i18n("WhisperX dependency conflict: install huggingface-hub>=0.34.0,<1.0 with uv pip, then restart the app")),
     ("huggingface_hub", i18n("WhisperX dependency conflict: install huggingface-hub>=0.34.0,<1.0 with uv pip, then restart the app")),
+    ("tokenizers", i18n("WhisperX dependency conflict: transformers caps tokenizers at 0.23.0 (and 0.23.0 was never released) — run: uv pip install \"tokenizers==0.22.2\", then restart the app")),
+    ("0.23.1", i18n("WhisperX dependency conflict: transformers caps tokenizers at 0.23.0 (and 0.23.0 was never released) — run: uv pip install \"tokenizers==0.22.2\", then restart the app")),
     # --- Gemini API errors first: common when keys expire or quota ends (v6.9) ---
     ("api key not valid", i18n("Invalid Gemini API key — check it or create a new one at aistudio.google.com/apikey, then save it in Settings")),
     ("api_key_invalid", i18n("Invalid Gemini API key — check it or create a new one at aistudio.google.com/apikey, then save it in Settings")),

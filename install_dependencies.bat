@@ -114,6 +114,11 @@ uv pip install --python "%PYTHON%" --no-cache whisperx
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
 uv pip install --python "%PYTHON%" --no-cache "huggingface-hub>=0.34.0,<1.0"
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
+rem tokenizers 0.23.1 breaks the transformers import check because
+rem transformers caps at 0.23.0 and 0.23.0 was never released on PyPI.
+rem Pin below 0.23.1 to keep the known-good 0.22.2.
+uv pip install --python "%PYTHON%" --no-cache "tokenizers>=0.22.0,<0.23.1"
+if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
 uv pip install --python "%PYTHON%" --no-cache "numpy<2"
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
 if /I "%GPU_MODE%"=="cuda" goto RESTORE_CUDA_TORCH

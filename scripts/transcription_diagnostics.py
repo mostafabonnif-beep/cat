@@ -70,7 +70,7 @@ def diagnose(base_dir: Optional[str] = None) -> Dict[str, Any]:
         free_mb = shutil.disk_usage(base_dir).free // (1024 * 1024)
     except Exception:
         free_mb = None
-    probes = {name: _probe(name) for name in ("torch", "torchaudio", "whisperx", "faster_whisper")}
+    probes = {name: _probe(name) for name in ("torch", "torchaudio", "whisperx", "transformers", "tokenizers", "faster_whisper")}
     primary_ready = bool(probes["torch"]["ok"] and probes["torchaudio"]["ok"] and probes["whisperx"]["ok"])
     fallback_ready = bool(probes["faster_whisper"]["ok"])
     missing = [name for name, result in probes.items() if not result["ok"]]
@@ -115,6 +115,12 @@ def build_error_message(
         lines.extend([
             "يوجد تعارض بين Transformers وhuggingface-hub داخل بيئة التفريغ.",
             "نفّذ من مجلد المشروع: uv pip install --python .\\.venv\\Scripts\\python.exe --upgrade \\\"huggingface-hub>=0.34.0,<1.0\\\"",
+        ])
+    if "tokenizers" in combined_error:
+        lines.extend([
+            "تعارض إصدارات tokenizers: transformers المثبت يقبل tokenizers>=0.22.0,<=0.23.0 فقط، لكن tokenizers 0.23.1 مثبت.",
+            "ملاحظة: tokenizers 0.23.0 غير موجود على PyPI أصلاً (قفز من 0.22.2 إلى 0.23.1)؛ الإصدار الصحيح هو 0.22.2.",
+            "نفّذ من مجلد المشروع: uv pip install --python .\\.venv\\Scripts\\python.exe --upgrade \\\"tokenizers>=0.22.0,<0.23.1\\\"",
         ])
     if report.get("fallback_ready"):
         lines.append("يتوفر faster-whisper كمسار احتياطي مستقل؛ شغّل OUSSAMA مجدداً بعد تثبيته لاستخدامه تلقائياً.")
@@ -221,7 +227,8 @@ def repair(mode: str = "cpu", base_dir: Optional[str] = None) -> Dict[str, Any]:
             "--upgrade", "torch", "torchaudio", "--index-url", index_url,
         ])),
         _run_install(_pip_command([
-            "--upgrade", "whisperx", "huggingface-hub>=0.34.0,<1.0", "numpy<2",
+            "--upgrade", "whisperx", "huggingface-hub>=0.34.0,<1.0",
+            "tokenizers>=0.22.0,<0.23.1", "numpy<2",
         ])),
     ]
     if mode == "gpu":

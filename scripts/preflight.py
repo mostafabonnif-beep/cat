@@ -102,6 +102,15 @@ DIST_TO_MODULE = {
 PINNED_RULES = [
     # (dist, violated_if, fix_note)
     ("numpy", "numpy<2", "whisperx/pyannote break on NumPy 2.x - installing numpy==1.26.4"),
+    # transformers (the 4.x / <=5.14 line this project pins, via
+    # huggingface-hub<1.0) requires tokenizers>=0.22.0,<=0.23.0, and
+    # tokenizers 0.23.0 was never released on PyPI (the jump went 0.22.2 ->
+    # 0.23.1). tokenizers 0.23.1 makes transformers fail its import check:
+    #   ImportError: tokenizers>=0.22.0,<=0.23.0 is required ... but found
+    #   tokenizers==0.23.1
+    # so cap below 0.23.1 (resolves to the known-good 0.22.2).
+    ("tokenizers", "tokenizers<0.23.1",
+     "transformers<=5.14 caps tokenizers at 0.23.0 and 0.23.0 does not exist - installing tokenizers==0.22.2"),
 ]
 
 # --------------------------------------------------------------------------
@@ -270,7 +279,7 @@ def check_dependency(dist, raw_line, critical):
     return {"name": dist, "status": OK, "detail": _version(dist)}
 
 
-def check_pin(dist, rule):
+def check_pin(dist, rule, note=None):
     """Enforce PINNED_RULES. Returns None when ok/unverifiable, else a FAIL dict."""
     spec = _iu.find_spec(dist.replace("-", "_"))
     if spec is None:
@@ -279,13 +288,30 @@ def check_pin(dist, rule):
         import packaging.version as _pv  # may not exist before core install
     except Exception:
         return None
+    if note is None:
+        for _dist, _rule, _note in PINNED_RULES:
+            if _dist == dist and _rule == rule:
+                note = _note
+                break
+        note = note or "version pin %s violated" % rule
     try:
         installed = _pv.parse(_version(dist))
-        if rule.startswith("numpy<"):
-            boundary = _pv.parse(rule.split("<", 1)[1])
-            if installed >= boundary:
-                return {"name": dist, "status": FAIL,
-                        "detail": "version %s violates %s - %s" % (_version(dist), rule, PINNED_RULES[0][2])}
+        if "<" not in rule:
+            return None
+        if dist == "tokenizers":
+            # Only relevant while the installed transformers is the pre-5.16
+            # line (the huggingface-hub<1.0 world). transformers>=5.16
+            # *requires* tokenizers>=0.23.1, so never pin tokenizers down in
+            # that world.
+            if not _dist_installed("transformers"):
+                return None
+            tver = _version("transformers")
+            if tver != "?" and _pv.parse(tver) >= _pv.parse("5.16"):
+                return None
+        boundary = _pv.parse(rule.split("<", 1)[1])
+        if installed >= boundary:
+            return {"name": dist, "status": FAIL,
+                    "detail": "version %s violates %s - %s" % (_version(dist), rule, note)}
     except Exception:
         return None
     return None
@@ -417,6 +443,30 @@ def fix_numpy_pin(dry_run=False):
     return False, "could not downgrade numpy (exit %s)" % (proc.returncode if proc else "?")
 
 
+def fix_tokenizers_pin(dry_run=False):
+    """tokenizers 0.23.1 breaks the transformers import check (the installed
+    transformers caps at <=0.23.0, and 0.23.0 was never released on PyPI).
+    Force the known-good 0.22.2 wheel."""
+    spec = _iu.find_spec("tokenizers")
+    if spec is None:
+        return True, "tokenizers not installed - nothing to pin"
+    try:
+        import packaging.version as _pv
+        v = _version("tokenizers")
+        if v != "?" and _pv.parse(v) < _pv.parse("0.23.1"):
+            return True, "tokenizers %s OK (<0.23.1)" % v
+    except Exception:
+        return True, "cannot read tokenizers version"
+    if dry_run:
+        return False, "would downgrade tokenizers (currently %s)" % v
+    if _is_frozen():
+        return False, "cannot reinstall tokenizers inside the packaged exe"
+    proc = _run_pip(["--force-reinstall", "--no-cache-dir", "--no-deps", "tokenizers==0.22.2"])
+    if proc is not None and proc.returncode == 0:
+        return True, "pinned tokenizers to 0.22.2 (<0.23.1)"
+    return False, "could not downgrade tokenizers (exit %s)" % (proc.returncode if proc else "?")
+
+
 def ensure_dirs():
     """Create the folders the app expects. Returns list of (label, ok, detail)."""
     out = []
@@ -471,9 +521,11 @@ def collect_checks():
             continue
         for dist, _raw in deps:
             checks.append(check_dependency(dist, _raw, critical=not _optional))
-            pin = check_pin(dist, PINNED_RULES[0][1]) if dist == "numpy" else None
-            if pin:
-                checks.append(pin)
+            for pin_dist, pin_rule, pin_note in PINNED_RULES:
+                if dist == pin_dist:
+                    pin = check_pin(dist, pin_rule, pin_note)
+                    if pin:
+                        checks.append(pin)
 
     critical_names = [c["name"] for c in checks if c["status"] == FAIL]
     warn_names = [c["name"] for c in checks if c["status"] == WARN]
@@ -532,11 +584,16 @@ def repair(mode, checks, ensure_upload=False):
         ok, detail = install_requirements(req_file, dry_run=False)
         fixed.append({"name": "stack " + label, "status": OK if ok else FAIL, "detail": detail})
 
-    # 3) numpy pin
-    for dist, rule, _note in PINNED_RULES:
-        pin = check_pin(dist, rule)
+    # 3) version pins (numpy<2, tokenizers<0.23.1)
+    for dist, rule, note in PINNED_RULES:
+        pin = check_pin(dist, rule, note)
         if pin:
-            ok, detail = fix_numpy_pin()
+            if dist == "numpy":
+                ok, detail = fix_numpy_pin()
+            elif dist == "tokenizers":
+                ok, detail = fix_tokenizers_pin()
+            else:
+                continue
             fixed.append({"name": dist, "status": OK if ok else FAIL, "detail": detail})
 
     # 4) re-check everything
