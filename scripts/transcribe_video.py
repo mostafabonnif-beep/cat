@@ -84,6 +84,19 @@ def _build_transcription_cache(input_file, model_name, srt_file, tsv_file, json_
     }
 
 
+def _transcript_artifacts_ok(srt_file, tsv_file, json_file):
+    """A cache hit is only valid when the artifacts are non-empty: a crash
+    between writer completion and cache save must not be treated as a
+    successful transcription forever (v7.27)."""
+    for path in (srt_file, tsv_file, json_file):
+        try:
+            if not path or not os.path.isfile(path) or os.path.getsize(path) <= 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
 def _cache_matches(cache, input_file, model_name, srt_file, tsv_file, json_file, device="auto"):
     if not cache:
         return False
@@ -99,9 +112,7 @@ def _cache_matches(cache, input_file, model_name, srt_file, tsv_file, json_file,
             and outputs.get("srt") == os.path.abspath(srt_file)
             and outputs.get("tsv") == os.path.abspath(tsv_file)
             and outputs.get("json") == os.path.abspath(json_file)
-            and os.path.exists(srt_file)
-            and os.path.exists(tsv_file)
-            and os.path.exists(json_file)
+            and _transcript_artifacts_ok(srt_file, tsv_file, json_file)
         )
     except Exception:
         return False
@@ -468,7 +479,7 @@ def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='
         return srt_file, tsv_file
 
     # Verifica se os arquivos já existem
-    if os.path.exists(srt_file) and os.path.exists(tsv_file) and os.path.exists(json_file):
+    if _transcript_artifacts_ok(srt_file, tsv_file, json_file):
         print("Os arquivos SRT, TSV e JSON já existem. Pulando a transcrição.")
         _save_transcription_cache(cache_path, input_file, model_name, srt_file, tsv_file, json_file)
         return srt_file, tsv_file

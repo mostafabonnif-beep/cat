@@ -188,6 +188,7 @@ def _adopt_downloaded_video(project_folder, output_path_base, final_video_path):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             check=False,
+            timeout=600,
         )
         if proc.returncode == 0 and valid(final_video_path):
             try:
@@ -198,6 +199,8 @@ def _adopt_downloaded_video(project_folder, output_path_base, final_video_path):
             return final_video_path
     except OSError as error:
         print(i18n("Could not normalize downloaded video {}: {}").format(source, error))
+    except subprocess.TimeoutExpired:
+        print(i18n("Could not normalize downloaded video {}: ffmpeg timed out after 600s").format(source))
     return None
 
 

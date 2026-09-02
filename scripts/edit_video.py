@@ -164,6 +164,54 @@ def sort_by_proximity(new_faces, old_faces, center_func):
     
     return new_faces
 
+
+def smooth_boxes_per_slot(boxes, smoothers, alpha, prev_count, frame_w, frame_h):
+    """EMA-smooth every active face slot independently (v7.27).
+
+    Slots keep their identity through the proximity/area ordering of the
+    detection step, so slot ``i`` tracks the same physical face across
+    detection cycles. Returns ``(smoothed_boxes, new_count)`` and resets all
+    smoothers when the face count changes, so stale history never drags a
+    vanished face across a layout switch. Boxes are clamped to the frame.
+    """
+    boxes = [list(b[:4]) for b in (boxes or [])]
+    if alpha <= 0 or not boxes:
+        return boxes, len(boxes)
+    if len(boxes) != prev_count:
+        for smoother in smoothers:
+            smoother.reset()
+    out = []
+    for i, box in enumerate(boxes):
+        if i >= len(smoothers):
+            out.append(box)
+            continue
+        smoothed = smoothers[i].update(box)
+        x1 = max(0.0, min(float(frame_w), float(smoothed[0])))
+        y1 = max(0.0, min(float(frame_h), float(smoothed[1])))
+        x2 = max(x1, min(float(frame_w), float(smoothed[2])))
+        y2 = max(y1, min(float(frame_h), float(smoothed[3])))
+        out.append([x1, y1, x2, y2])
+    return out, len(boxes)
+
+
+def face_count_hold(state, num_faces, prev_faces, misses, grace):
+    """Auto-mode face-count down-grace (v7.27).
+
+    When a 2+ face layout is active and one face is momentarily missing
+    (turned head, detector blip), return ``(True, misses+1)`` for up to
+    ``grace`` detection cycles so the lookahead + frozen-box logic can ride
+    through the blip instead of popping the crop to 1 face and back.
+    """
+    if (state >= 2 and num_faces > 0 and num_faces < state
+            and prev_faces is not None and len(prev_faces) >= state):
+        if misses < grace:
+            return True, misses + 1
+        return False, 0
+    if num_faces > 0 and num_faces >= state:
+        return False, 0
+    return False, misses
+
+
 def generate_short_fallback(input_file, output_file, index, project_folder, final_folder, no_face_mode="padding"):
     """Fallback function: Center Crop (Zoom) or Padding if detection fails."""
     print(f"Processing (Fallback): {input_file} | Mode: {no_face_mode}")
@@ -486,7 +534,7 @@ def generate_short_mediapipe(input_file, output_file, index, face_mode, project_
                 else:
                     step = int(5) # 5 frames for 1 face
                 
-                next_detection_frame = frame_index + step
+            next_detection_frame = frame_index + step
 
             if len(transition_frames) > 0:
                 current_faces = transition_frames[0]
@@ -665,6 +713,13 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     face_smoothers = [SmoothBox(alpha=smoothing) for _ in range(4)]
     smoothing_frames = 0
     smoothing_total = 0
+
+    smoothed_slots = 0  # how many face slots were smoothed last frame (v7.27)
+    # Auto-mode face-count grace (v7.27): a 2-face layout survives brief
+    # detection blips (2 quick re-detect cycles ~0.2s apart) instead of
+    # popping to 1 face and back.
+    face_drop_misses = 0
+    face_drop_grace_cycles = 2
 
     transition_duration = 4 # Smooth transition over 4 frames (almost continuous)
     transition_frames = []
@@ -914,6 +969,14 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                 if speaker_switched:
                     print(f"DEBUG: Active speaker switched at frame {frame_index}")
             
+            # v7.27: auto-mode count-down grace (see face_count_hold).
+            holding_multi = False
+            if str(face_mode).lower() == "auto":
+                holding_multi, face_drop_misses = face_count_hold(
+                    current_num_faces_state, len(faces) if faces else 0,
+                    last_detected_faces, face_drop_misses,
+                    face_drop_grace_cycles)
+
             # Decide how many faces to frame. Explicit multi modes are stable;
             # auto intentionally keeps the legacy 1/2-speaker heuristic.
             target_faces = 1
@@ -988,7 +1051,13 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                  pass
             
             # -----------------------------
-            
+
+            # (v7.27) During the count-down grace window keep requesting the
+            # previous multi-face target so the lookahead gets a chance to
+            # re-acquire the momentarily missing face.
+            if holding_multi:
+                target_faces = max(target_faces, current_num_faces_state)
+
             # Fallback Lookahead: If detection fails or partial
             # But DO NOT look ahead if we are in Crowd Mode (we explicitly wanted 0 faces)
             if len(faces) < target_faces and not is_crowd:
@@ -1086,9 +1155,15 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                     detections = [faces_sorted[0]['bbox']]
                     current_num_faces_state = 1
             else:
+                 # (v7.27) Grace window still active and the face is missing
+                 # after lookahead: emit NO detection this cycle so the frame
+                 # writer keeps the last known multi-face boxes (frozen for up
+                 # to 3s) instead of popping to a 1-face crop.
+                 if holding_multi and len(faces) > 0:
+                     detections = []
                  # Keep all available faces for an explicit multi mode, otherwise
                  # retain auto's safe single-face fallback.
-                 if len(faces) > 0:
+                 elif len(faces) > 0:
                      faces_sorted = sorted(faces, key=lambda f: f['effective_area'], reverse=True)
                      if mode_name not in {"auto", "1"} and target_faces > 1 and len(faces) >= 2:
                          selected = [f['bbox'] for f in faces_sorted[:target_faces]]
@@ -1181,6 +1256,12 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
             else:
                 step = 5 # 5 frames for 1 face (~0.16s at 30fps)
             
+            if holding_multi:
+                # A face is missing inside the grace window: re-check quickly
+                # (~0.2s) instead of waiting the full 2-face period (~1s) so
+                # recovery is snappy.
+                step = min(step, max(1, int(0.2 * fps)))
+
             next_detection_frame = frame_index + step
 
         if len(transition_frames) > 0:
@@ -1203,20 +1284,19 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
             
             continue
 
-        # v7.18: smooth the active crop boxes (EMA) so the camera motion is
-        # fluid instead of stepping between detection frames. Multi-face
-        # layouts keep raw boxes (they are already stabilized by the dead
-        # zone + transition system); single-face crops benefit most.
-        if smoothing > 0 and len(current_faces) == 1:
+        # v7.27: EMA-smooth EVERY active face slot (single AND multi-face
+        # layouts). Slots keep identity through the proximity/area ordering of
+        # the detection step, so slot i tracks the same physical face across
+        # cycles; the dead zone already ignores sub-pixel noise.
+        if smoothing > 0 and len(current_faces) > 0:
             smoothing_total += 1
-            box = list(current_faces[0])
-            smoothed = face_smoothers[0].update(box)
-            if face_smoothers[0].active:
-                current_faces = [smoothed]
+            current_faces, smoothed_slots = smooth_boxes_per_slot(
+                current_faces, face_smoothers, smoothing, smoothed_slots,
+                frame_width, frame_height)
+            if smoothed_slots > 0:
                 smoothing_frames += 1
         else:
-            face_smoothers[0].reset()
-            for smoother in face_smoothers[1:]:
+            for smoother in face_smoothers:
                 smoother.reset()
 
         last_frame_face_positions = current_faces
