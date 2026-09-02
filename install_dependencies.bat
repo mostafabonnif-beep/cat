@@ -76,7 +76,7 @@ goto INSTALL_CORE
 echo.
 echo [3/6] Installing OUSSAMA Cutter transcription runtime: %GPU_MODE%
 if /I "%GPU_MODE%"=="cuda" goto INSTALL_CUDA
-uv pip install --python "%PYTHON%" --no-cache torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+uv pip install --python "%PYTHON%" --no-cache torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
 if errorlevel 1 goto TRANSCRIPTION_TORCH_FAILED
 goto INSTALL_CORE
 
@@ -87,7 +87,7 @@ goto INSTALL_CORE
 
 :INSTALL_CUDA
 echo Installing NVIDIA CUDA PyTorch runtime...
-uv pip install --python "%PYTHON%" --no-cache torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+uv pip install --python "%PYTHON%" --no-cache torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 if errorlevel 1 goto TRANSCRIPTION_TORCH_FAILED
 
 goto INSTALL_CORE
@@ -114,6 +114,11 @@ uv pip install --python "%PYTHON%" --no-cache whisperx
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
 uv pip install --python "%PYTHON%" --no-cache "huggingface-hub>=0.34.0,<1.0"
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
+rem tokenizers 0.23.1 breaks the transformers import check because
+rem transformers caps at 0.23.0 and 0.23.0 was never released on PyPI.
+rem Pin below 0.23.1 to keep the known-good 0.22.2.
+uv pip install --python "%PYTHON%" --no-cache "tokenizers>=0.22.0,<0.23.1"
+if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
 uv pip install --python "%PYTHON%" --no-cache "numpy<2"
 if errorlevel 1 set "TRANSCRIPTION_FAILED=1"
 if /I "%GPU_MODE%"=="cuda" goto RESTORE_CUDA_TORCH
@@ -121,7 +126,7 @@ goto VERIFY_TRANSCRIPTION
 
 :RESTORE_CUDA_TORCH
 echo Restoring NVIDIA CUDA Torch after WhisperX dependency resolution...
-uv pip install --python "%PYTHON%" --no-cache --reinstall torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+uv pip install --python "%PYTHON%" --no-cache --reinstall torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 if errorlevel 1 goto TRANSCRIPTION_TORCH_FAILED
 
 :VERIFY_TRANSCRIPTION

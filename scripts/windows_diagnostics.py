@@ -173,6 +173,22 @@ def _torch_checks() -> list[dict[str, Any]]:
             checks.append(_check("huggingface-hub", WARN, info))
     except Exception as exc:
         checks.append(_check("huggingface-hub", WARN, str(exc)))
+    try:
+        imported, info = _import_probe("tokenizers", "tokenizers")
+        if imported:
+            try:
+                bad = tuple(int(x) for x in info.split(".")[:3]) >= (0, 23, 1)
+            except Exception:
+                bad = False
+            checks.append(_check(
+                "tokenizers",
+                WARN if bad else OK,
+                info if not bad else
+                "%s — WhisperX/transformers requires <0.23.1 (0.23.0 was never released; install 0.22.2)" % info))
+        else:
+            checks.append(_check("tokenizers", WARN, info))
+    except Exception as exc:
+        checks.append(_check("tokenizers", WARN, str(exc)))
     return checks
 
 

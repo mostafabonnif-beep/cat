@@ -136,6 +136,95 @@ def test_check_pin_numpy_violation(monkeypatch):
     assert r is not None and r["status"] == preflight.FAIL
 
 
+def test_check_pin_tokenizers_ok(monkeypatch):
+    # tokenizers below 0.23.1 (0.23.0 was never released; 0.22.2 is the
+    # known-good version for transformers<=5.14) must pass regardless of env.
+    class FakeSpec:
+        pass
+
+    monkeypatch.setattr(preflight._iu, "find_spec", lambda name: FakeSpec())
+    monkeypatch.setattr(
+        preflight._pkg_meta, "version",
+        lambda d: "0.22.2" if d == "tokenizers" else "4.56.0")
+    assert preflight.check_pin("tokenizers", "tokenizers<0.23.1") is None
+
+
+def test_check_pin_tokenizers_violation(monkeypatch):
+    # tokenizers 0.23.1 with transformers on the <=5.14 line (hub<1.0 world)
+    # breaks the transformers import check -> must be flagged as FAIL.
+    class FakeSpec:
+        pass
+
+    monkeypatch.setattr(preflight._iu, "find_spec", lambda name: FakeSpec())
+
+    def fake_version(dist):
+        return {"tokenizers": "0.23.1", "transformers": "4.56.0"}.get(dist, "?")
+
+    monkeypatch.setattr(preflight._pkg_meta, "version", fake_version)
+    r = preflight.check_pin("tokenizers", "tokenizers<0.23.1")
+    assert r is not None and r["status"] == preflight.FAIL
+    assert "0.23.1" in r["detail"]
+
+
+def test_check_pin_tokenizers_skipped_on_transformers_5_16(monkeypatch):
+    # transformers>=5.16 REQUIRES tokenizers>=0.23.1, so the cap must not
+    # fire in that world.
+    class FakeSpec:
+        pass
+
+    monkeypatch.setattr(preflight._iu, "find_spec", lambda name: FakeSpec())
+
+    def fake_version(dist):
+        return {"tokenizers": "0.23.1", "transformers": "5.16.1"}.get(dist, "?")
+
+    monkeypatch.setattr(preflight._pkg_meta, "version", fake_version)
+    assert preflight.check_pin("tokenizers", "tokenizers<0.23.1") is None
+
+
+def test_check_pin_hub_ok(monkeypatch):
+    # huggingface-hub<1.0 with transformers on the 4.x line must pass.
+    class FakeSpec:
+        pass
+
+    monkeypatch.setattr(preflight._iu, "find_spec", lambda name: FakeSpec())
+    monkeypatch.setattr(
+        preflight._pkg_meta, "version",
+        lambda d: "0.36.2" if d == "huggingface-hub" else "4.56.0")
+    assert preflight.check_pin("huggingface-hub", "huggingface-hub<1.0") is None
+
+
+def test_check_pin_hub_violation(monkeypatch):
+    # huggingface-hub 1.29.0 with transformers 4.x breaks the import check
+    # ("huggingface-hub>=0.34.0,<1.0 is required ... found 1.29.0") -> FAIL.
+    class FakeSpec:
+        pass
+
+    monkeypatch.setattr(preflight._iu, "find_spec", lambda name: FakeSpec())
+
+    def fake_version(dist):
+        return {"huggingface-hub": "1.29.0", "transformers": "4.56.0"}.get(dist, "?")
+
+    monkeypatch.setattr(preflight._pkg_meta, "version", fake_version)
+    r = preflight.check_pin("huggingface-hub", "huggingface-hub<1.0")
+    assert r is not None and r["status"] == preflight.FAIL
+    assert "1.29.0" in r["detail"]
+
+
+def test_check_pin_hub_skipped_on_transformers_5_16(monkeypatch):
+    # transformers 5.14+/5.16 (the uv.lock world) requires huggingface-hub>=1.5,
+    # so hub>=1.0 must NOT be flagged there.
+    class FakeSpec:
+        pass
+
+    monkeypatch.setattr(preflight._iu, "find_spec", lambda name: FakeSpec())
+
+    def fake_version(dist):
+        return {"huggingface-hub": "1.29.0", "transformers": "5.14.1"}.get(dist, "?")
+
+    monkeypatch.setattr(preflight._pkg_meta, "version", fake_version)
+    assert preflight.check_pin("huggingface-hub", "huggingface-hub<1.0") is None
+
+
 # --------------------------------------------------------------------------
 # Repair actions
 # --------------------------------------------------------------------------

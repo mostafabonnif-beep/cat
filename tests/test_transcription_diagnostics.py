@@ -9,8 +9,22 @@ def test_diagnostics_is_json_serializable():
     report = diagnose(".")
     assert report["app"] == "OUSSAMA Cutter"
     assert isinstance(report["packages"], dict)
-    assert set(report["packages"]) == {"torch", "torchaudio", "whisperx", "faster_whisper"}
+    assert set(report["packages"]) == {
+        "torch", "torchaudio", "whisperx", "transformers",
+        "tokenizers", "faster_whisper",
+    }
     assert report["backend"] in {"none", "whisperx", "faster-whisper"}
+
+
+def test_tokenizers_conflict_message_is_actionable():
+    message = build_error_message(
+        "ImportError: tokenizers>=0.22.0,<=0.23.0 is required ... but found "
+        "tokenizers==0.23.1",
+        base_dir=".",
+    )
+    assert "تعارض إصدارات tokenizers" in message
+    assert "tokenizers==0.22.2" not in message  # guidance uses the range form
+    assert "tokenizers>=0.22.0,<0.23.1" in message
 
 
 def test_missing_stack_message_is_actionable():

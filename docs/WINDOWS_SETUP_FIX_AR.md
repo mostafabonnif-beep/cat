@@ -223,7 +223,7 @@ cd D:\SS
 .\run_webui.bat
 ```
 
-يجب أن يظهر `numpy 1.26.4`، مع بقاء `torch 2.5.1+cu124` و`torchaudio 2.5.1+cu124` و`whisperx 3.8.6` جاهزة. تحذيرات `google-auth-oauthlib` و`pyacoustid` اختيارية ولا تمنع التفريغ أو استخدام RTX 3060.
+يجب أن يظهر `numpy 1.26.4`، مع بقاء `torch 2.6.0+cu124` و`torchaudio 2.6.0+cu124` و`whisperx 3.8.6` جاهزة. تحذيرات `google-auth-oauthlib` و`pyacoustid` اختيارية ولا تمنع التفريغ أو استخدام RTX 3060.
 
 
 ## إصلاح رسالة `No module named pip`
@@ -237,7 +237,7 @@ cd D:\SS
 uv pip install --python .\.venv\Scripts\python.exe --force-reinstall --no-cache numpy==1.26.4
 ```
 
-لا تحذف البيئة ولا تعِد تثبيت Torch CUDA؛ النتيجة السابقة تؤكد أن `Torch 2.5.1+cu124` و`CUDA available: True` و`RTX 3060` تعمل بشكل صحيح. المشكلة الحالية محصورة في أداة تثبيت NumPy داخل venv.
+لا تحذف البيئة ولا تعِد تثبيت Torch CUDA؛ النتيجة السابقة تؤكد أن `Torch 2.6.0+cu124` و`CUDA available: True` و`RTX 3060` تعمل بشكل صحيح. المشكلة الحالية محصورة في أداة تثبيت NumPy داخل venv.
 
 
 ## إصلاح تعارض huggingface-hub مع WhisperX
@@ -258,6 +258,73 @@ uv pip install --python .\.venv\Scripts\python.exe --upgrade "huggingface-hub>=0
 ```
 
 يجب أن يكون إصدار `huggingface-hub` أقل من 1.0، وأن تبقى `CUDA: True`. لا تستخدم `pip` داخل هذه البيئة إذا ظهر `No module named pip`؛ استخدم `uv pip --python` كما في الأمر أعلاه. رسالة الفيديو المقيد عمرياً منفصلة، وتعالج عبر كوكيز المتصفح بعد نجاح توافق الحزم.
+
+**ملاحظة عن الترتيب:** إذا ظهر بعد هذا الإصلاح خطأ `tokenizers` أيضاً، فبيئة التفريغ كانت قد حصلت على ترقيتين جزئيتين — نفّذ أيضاً قسم «إصلاح تعارض tokenizers» أدناه. إعادة التثبيت الكاملة عبر `--repair` من `transcription_diagnostics` تثبّت القيدين معاً تلقائياً. (إصدار `huggingface-hub 1.29.0` أو أحدث لا يتعارض مع مستخدمي مسار `uv sync`/`uv.lock` لأن `transformers 5.14+` يتطلب hub>=1.5 — القيد `<1.0` خاص بمسار التثبيت الكلاسيكي الذي يستخدمه هذا الدليل.)
+
+
+## إصلاح تعارض tokenizers مع WhisperX
+
+إذا ظهر الخطأ:
+
+```text
+ImportError: tokenizers>=0.22.0,<=0.23.0 is required for a normal functioning
+of this module, but found tokenizers==0.23.1.
+```
+
+فهذا تعارض إصدارات جديد داخل طبقة Transformers. الـ `transformers` المثبت (خط الإصدارات 4.x أو 5.14 وما دون — المرتبط بقيد `huggingface-hub<1.0` في هذا المشروع) يقبل `tokenizers` حتى 0.23.0 فقط، لكن البيئة حصلت على `tokenizers 0.23.1` أثناء ترقية جزئية.
+
+**ملاحظة مهمة:** `tokenizers 0.23.0` غير موجود على PyPI أصلاً — الإصدارات قفزت من `0.22.2` إلى `0.23.1`. لذلك الإصدار الصحيح المتوافق مع هذا المشروع هو `0.22.2`، وليس 0.23.0.
+
+للإصلاح الفوري من PowerShell:
+
+```powershell
+cd D:\SS
+uv pip install --python .\.venv\Scripts\python.exe --upgrade "tokenizers>=0.22.0,<0.23.1"
+```
+
+ثم تحقق من الاستيراد:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import huggingface_hub, transformers, tokenizers, whisperx, torch; print('huggingface-hub:', huggingface_hub.__version__); print('transformers:', transformers.__version__); print('tokenizers:', tokenizers.__version__); print('WhisperX: READY'); print('CUDA:', torch.cuda.is_available())"
+```
+
+يجب أن يكون إصدار `tokenizers` هو `0.22.2`، وأن تبقى `CUDA: True`. النسخ المحدثة من `requirements-transcribe.txt` و`install_dependencies.bat` تثبت هذا القيد تلقائياً (`tokenizers>=0.22.0,<0.23.1`) حتى لا يتكرر التعارض بعد إعادة التثبيت.
+
+
+## خطأ "Could not parse transcript from TSV or SRT" بعد اكتمال التفريغ
+
+إذا أكمل التفريغ (`Processamento concluído...`) ثم توقف عند مرحلة إنشاء المقاطع بهذا الخطأ، فالسبب أحد أمرين (أو كلاهما):
+
+### 1) فشل محاذاة الكلمات العربية — يتطلب Torch 2.6 فما فوق
+
+عند محاذاة العربية يحمّل WhisperX نموذج `jonatasgrosman/wav2vec2-large-xlsr-53-arabic`، وهذا النموذج **لا يملك ملفات safetensors — أوزانه `pytorch_model.bin` فقط**. ولأن `torch.load` فيه ثغرة أمنية (CVE-2025-32434)، يرفض transformers تحميل مثل هذه الملفات قطعياً إذا كان Torch أقل من 2.6:
+
+```text
+Due to a serious vulnerability issue in torch.load ... we now require users
+to upgrade torch to at least v2.6 in order to use the function.
+Error loading model from huggingface ... could not be found in huggingface
+Continuando com transcrição bruta.
+```
+
+رسالة "could not be found" مضلّلة — المشكلة ليست الشبكة بل إصدار Torch. الإصلاح (نفس خط cu124 المعتمد في المشروع):
+
+```powershell
+cd D:\SS
+uv pip install --python .\.venv\Scripts\python.exe torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+```
+
+ثم تحقق: `torch.__version__` يجب أن يكون `2.6.0+cu124` و`CUDA available: True`. النسخ المحدثة من `install_dependencies.bat` تثبت 2.6.0 تلقائياً.
+
+### 2) فيديو محلي باسم مختلف عن input — ملفات التفريغ بلا اسم موحد
+
+الفيديوهات المحمّلة من YouTube تُحفظ باسم `input.mp4` فتخرج ملفات التفريغ `input.srt/input.tsv`. أما الفيديو المحلي (أو المرفوع من جهازك) فيحتفظ باسمه الأصلي (مثلاً اسم عربي طويل)، فتخرج الملفات باسمه وتفشل مرحلة المقاطع لأنها تبحث عن `input.tsv/input.srt`. النسخ المحدثة من المشروع تنسخ الملفات تلقائياً إلى `input.*`، ولمشروع قديم مكسور نفّذ يدوياً من مجلد المشروع:
+
+```powershell
+Get-ChildItem "D:\SS\VIRALS\<اسم المشروع>\*.srt" | Where-Object { $_.Name -ne "input.srt" } | Select-Object -First 1 | Copy-Item -Destination "input.srt" -Force
+Get-ChildItem "D:\SS\VIRALS\<اسم المشروع>\*.tsv" | Where-Object { $_.Name -ne "input.tsv" } | Select-Object -First 1 | Copy-Item -Destination "input.tsv" -Force
+```
+
+ثم أعد تشغيل المعالجة على نفس المشروع. بعد تطبيق الإصلاحين أعد المحاولة: ستعمل المحاذاة (كلمات بتوقيتات دقيقة) وتكتمل المقاطع.
 
 
 ## عندما يبدو التفريغ متوقفاً بعد اكتشاف اللغة

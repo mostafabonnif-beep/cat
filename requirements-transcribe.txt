@@ -19,4 +19,13 @@ torch
 torchaudio
 huggingface-hub>=0.34.0,<1.0
 
+# transformers (the 4.x / <=5.14 line required by huggingface-hub<1.0 above)
+# caps tokenizers at <=0.23.0 — and tokenizers 0.23.0 was never released on
+# PyPI (the jump went 0.22.2 -> 0.23.1). tokenizers 0.23.1 breaks the
+# transformers import check:
+#   ImportError: tokenizers>=0.22.0,<=0.23.0 is required ... but found
+#   tokenizers==0.23.1
+# Keep the pair below 0.23.1 (pip resolves to the known-good 0.22.2).
+tokenizers>=0.22.0,<0.23.1
+
 numpy<2  # whisperx/pyannote.audio require NumPy 1.x (np.NaN removed in 2.0)

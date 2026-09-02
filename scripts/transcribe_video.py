@@ -565,7 +565,8 @@ def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='
                     raise
                 except Exception as load_err:
                     conflict = str(load_err).lower()
-                    if "huggingface-hub" in conflict or "huggingface_hub" in conflict:
+                    if ("huggingface-hub" in conflict or "huggingface_hub" in conflict
+                            or "tokenizers" in conflict):
                         raise TranscriptionUnavailableError(
                             build_error_message(whisperx_error=str(load_err), base_dir=project_folder)
                         ) from load_err
