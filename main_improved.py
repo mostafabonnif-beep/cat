@@ -20,6 +20,7 @@ warnings.filterwarnings("ignore")
 import argparse
 import atexit
 import json
+import shutil
 import time
 
 from app_brand import APP_NAME
@@ -1202,7 +1203,28 @@ def main():
                 raise RuntimeError("Transcription output validation failed: {}".format(
                     "; ".join(transcript_report.get("errors", []))[:2000]))
             emit_progress("transcribe", 65, "تفريغ الصوت")
- 
+
+            # Normalize transcript artifact names for downstream stages.
+            # YouTube downloads are saved as input.mp4, so whisperx writers
+            # produce input.srt/input.tsv/input.json. Local/external videos
+            # keep their ORIGINAL basename (e.g. a long Arabic filename), so
+            # create_viral_segments / safety_filter would fail to find
+            # input.tsv/input.srt:
+            #   ValueError: Could not parse transcript from TSV or SRT.
+            # Copy the fresh artifacts to the canonical input.* names.
+            if base_name != "input":
+                for _ext in (".srt", ".tsv", ".json"):
+                    _src = os.path.join(project_folder, base_name + _ext)
+                    _dst = os.path.join(project_folder, "input" + _ext)
+                    if os.path.isfile(_src):
+                        try:
+                            shutil.copy2(_src, _dst)
+                            print("[transcribe] Copied transcript artifact to {} for downstream stages.".format(
+                                os.path.basename(_dst)))
+                        except OSError as _copy_err:
+                            print("[transcribe] Could not copy {} -> {}: {}".format(
+                                _src, _dst, _copy_err))
+
         # 3. Create Viral Segments
         if workflow_choice != "3":
             # Se não carregamos 'viral_segments' lá em cima (ou se era download novo), checamos agora ou criamos
