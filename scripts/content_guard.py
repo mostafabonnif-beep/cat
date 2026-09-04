@@ -395,6 +395,30 @@ def assess_clip(project_folder: str, index: int | None = None, *, title: str = "
                 except Exception:
                     pass
 
+
+            if video_path and os.path.isfile(video_path):
+                try:
+                    from scripts import content_ledger
+                    matches = content_ledger.find_visual_matches(
+                        project_folder, video_path, platform=platform,
+                        registry_path=registry_path)
+                    if matches:
+                        evidence["cross_project_visual_matches"] = [
+                            {"project": item.get("project_path"),
+                             "video": item.get("video_name"),
+                             "similarity": item.get("similarity")}
+                            for item in matches
+                        ]
+                        reasons.append({
+                            "source": "content_ledger",
+                            "code": "cross_project_near_duplicate",
+                            "severity": "high",
+                            "detail": "هذا المقطع مطابق بصرياً لمخرج سابق في مشروع آخر على {} (تشابه {}%).".format(
+                                platform, int((matches[0].get("similarity") or 0) * 100)),
+                        })
+                except Exception:
+                    pass
+
             since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
             row = connection.execute(
                 "SELECT COUNT(*) AS count FROM published_content WHERE source_identity=? "

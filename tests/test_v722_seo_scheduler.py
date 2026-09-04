@@ -141,7 +141,8 @@ class TestBuildPlan:
 
     def test_plan_spreads_clips(self, tmp_path):
         plan = publish_scheduler.build_plan(
-            self._clips(tmp_path), platform="youtube", days=7)
+            self._clips(tmp_path), platform="youtube", days=7,
+            start_at="2026-09-07T08:00:00+00:00")
         assert plan["ok"] is True
         assert plan["count"] == 3
         times = [datetime.fromisoformat(x["publish_at"]) for x in plan["plan"]]

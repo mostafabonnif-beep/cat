@@ -148,7 +148,47 @@ def record_safety_report(project_folder: str, report: dict[str, Any],
         connection.close()
 
 
-def ledger_summary(project_folder: str, registry_path: str | None = None) -> dict[str, Any]:
+def find_visual_matches(project_folder: str, video_path: str | None,
+                       platform: str = "youtube", threshold: float = 0.80,
+                       registry_path: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
+    """Find near-duplicate rendered clips from other projects in the ledger."""
+    if not video_path or not os.path.isfile(video_path):
+        return []
+    from scripts.originality import _similarity_between, video_fingerprint
+
+    candidate = video_fingerprint(video_path)
+    if not candidate:
+        return []
+    current_project = os.path.abspath(os.fspath(project_folder))
+    connection = _connect(project_folder, registry_path)
+    try:
+        rows = connection.execute(
+            "SELECT * FROM clip_audits WHERE platform=? ORDER BY created_at DESC LIMIT 500",
+            (str(platform or "youtube").strip().lower(),),
+        ).fetchall()
+        matches = []
+        for row in rows:
+            if os.path.abspath(row["project_path"]) == current_project:
+                continue
+            raw = row["visual_fingerprint"]
+            if not raw:
+                continue
+            try:
+                stored = [int(value) for value in str(raw).split("|") if value]
+            except ValueError:
+                continue
+            similarity = _similarity_between(candidate, stored)
+            if similarity >= float(threshold):
+                item = dict(row)
+                item["similarity"] = similarity
+                matches.append(item)
+        matches.sort(key=lambda item: (item["similarity"], item.get("created_at", "")), reverse=True)
+        return matches[:max(1, int(limit))]
+    finally:
+        connection.close()
+
+
+def ledger_summary(project_folder: str, registry_path: str | None = None):
     connection = _connect(project_folder, registry_path)
     try:
         result = {"database": _registry_path(project_folder, registry_path)}
