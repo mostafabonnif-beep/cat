@@ -620,6 +620,8 @@ def main():
                         help="Comma-separated keywords that trigger punch-in zoom (with --polish)")
     parser.add_argument("--metadata-gate", choices=["off", "warn", "block"], default="warn",
                         help="Metadata compliance gate (title/caption/hashtags): 'warn' flags + writes to the scorecard (default), 'block' stops the run when any clip has risky metadata, 'off' skips it")
+    parser.add_argument("--provenance-gate", choices=["warn", "block"], default="warn",
+                        help="Rights and transformation evidence policy: warn records review, block refuses clips without declared rights and meaningful editorial transformation")
     parser.add_argument("--auto-download-visual", action="store_true",
                         help="Download the small ONNX visual classifier into models/ when missing (Roadmap 2.1)")
     parser.add_argument("--visual-check", choices=["off", "auto", "on"], default="auto",
@@ -1687,6 +1689,7 @@ def main():
                     visual_gate=args.visual_gate,
                     visual_frames=args.visual_frames,
                     visual_model_path=args.visual_model,
+                    provenance_gate=args.provenance_gate,
                 )
                 if report is None:
                     report = risk_scorecard.analyze_project(
@@ -1695,7 +1698,8 @@ def main():
                         visual_check=args.visual_check,
                         visual_gate=args.visual_gate,
                         visual_frames=args.visual_frames,
-                        visual_model_path=args.visual_model)
+                        visual_model_path=args.visual_model,
+                        provenance_gate=args.provenance_gate)
                 summary = report.get("summary", {})
                 if summary.get("visual_unavailable"):
                     print("[risk] ⚠️ Visual scan unavailable: no usable local ONNX model; "
@@ -1705,6 +1709,13 @@ def main():
                           "Install/download the model, or use --visual-check auto with --visual-gate warn.")
                     sys.exit(1)
                 blocked = report.get("blocked", [])
+                provenance_summary = (report.get("summary") or {}).get("provenance") or {}
+                if provenance_summary.get("review"):
+                    print("[provenance] ⚠️ {} clip(s) need rights/transformation evidence; see provenance_report.json.".format(
+                        provenance_summary.get("review")))
+                if provenance_summary.get("blocked") and args.provenance_gate == "block":
+                    print("[provenance] ⛔ provenance gate blocked publishing; add rights_manifest.json and document commentary/voiceover/B-roll.")
+                    sys.exit(1)
 
                 if blocked:
                     print(i18n("[risk] ⛔ BLOCKED FOR PUBLISH: {} clip(s) — remove or re-edit before uploading. Details in risk_scorecard.json / publish_blocklist.json").format(len(blocked)))

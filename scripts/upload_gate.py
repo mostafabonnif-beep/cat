@@ -146,6 +146,25 @@ def _safety_report_reasons(project_folder, index):
     return reasons
 
 
+def _provenance_reasons(project_folder, index):
+    data = _load_json(project_folder, "provenance_report.json") or {}
+    if str(data.get("policy", "warn")).lower() != "block":
+        return []
+    reasons = []
+    for item in data.get("clips", []) or []:
+        if not isinstance(item, dict) or (index is not None and item.get("index") != index):
+            continue
+        if item.get("action") != "block":
+            continue
+        reasons.append({
+            "source": "provenance",
+            "detail": "rights or meaningful transformation evidence is incomplete for clip #{}: {}".format(
+                item.get("index", "?"), "; ".join(item.get("reasons", []) or ["review required"])),
+            "severity": "high",
+        })
+    return reasons
+
+
 # ---------------------------------------------------------------------------
 # The gate
 # ---------------------------------------------------------------------------
@@ -175,6 +194,7 @@ def check_clip(project_folder, index=None, title="", caption="", hashtags=None,
         # a false block caused by a filesystem problem.
         guard_verdict = {"allowed": True, "reasons": [], "evidence": {"error": str(exc)}}
     reasons += _blocklist_reasons(project_folder, index)
+    reasons += _provenance_reasons(project_folder, index)
     reasons += _safety_report_reasons(project_folder, index)
 
     # Audio copyright fingerprint report (Roadmap 2.3) — optional module.

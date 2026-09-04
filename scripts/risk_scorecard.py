@@ -28,6 +28,7 @@ import subprocess
 from scripts import visual_check as visual_check_module
 from scripts.safety_filter import find_matches
 from scripts import content_ledger
+from scripts import provenance
 
 SCORECARD_FILENAME = "risk_scorecard.json"
 PUBLISH_BLOCKLIST_FILENAME = "publish_blocklist.json"
@@ -228,14 +229,14 @@ def _load_words(project_folder):
 
 def score_segment(segment, index, project_folder, words, source_video,
                   visual_model_path=None, visual_classifier=None, safety_entry=None,
-                  visual_frames=4, visual_threshold=VISUAL_GRAPHIC_THRESHOLD):
+                  provenance_entry=None, visual_frames=4, visual_threshold=VISUAL_GRAPHIC_THRESHOLD):
     """Compute the risk axes for one segment. Returns a dict (never raises)."""
     entry = {
         "index": index,
         "title": segment.get("title", f"Segment_{index}"),
         "start_time": segment.get("start_time"),
         "end_time": segment.get("end_time"),
-        "axes": {},
+        "axes": {"provenance": provenance_entry or {}},
         "overall": "unknown",
         "overall_score": 0,
     }
@@ -329,7 +330,7 @@ def score_segment(segment, index, project_folder, words, source_video,
 def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REUSE_THRESHOLD,
                     visual_model_path=None, auto_download_visual=False, i18n=lambda k: k,
                     visual_check="auto", visual_gate="warn", visual_frames=4,
-                    visual_threshold=VISUAL_GRAPHIC_THRESHOLD):
+                    visual_threshold=VISUAL_GRAPHIC_THRESHOLD, provenance_gate="warn"):
     """Score every segment, persist risk_scorecard.json + publish_blocklist.json.
 
     Returns {"segments": [...], "blocked": [...], "summary": {...}}.
@@ -392,6 +393,14 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
                                      visual_frames=visual_frames,
                                      visual_threshold=visual_threshold))
 
+    provenance_reviews = []
+    for entry in entries:
+        evidence = provenance.assess_clip(
+            project_folder, entry.get("index"), policy=provenance_gate)
+        entry["axes"]["provenance"] = evidence
+        if evidence.get("action") != "allow":
+            provenance_reviews.append(entry)
+
     def _non_visual_score(entry):
         axes = entry.get("axes") or {}
         text = axes.get("text") or {}
@@ -408,7 +417,8 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
     blocked = [e for e in entries if
                ((e.get("axes") or {}).get("reuse") or {}).get("score", 0) >= gate_threshold
                or _non_visual_score(e) >= 70.0
-               or _visual_blocked(e)]
+               or _visual_blocked(e)
+               or ((e.get("axes") or {}).get("provenance") or {}).get("action") == "block"]
 
     summary = {
         "total": len(entries),
@@ -424,6 +434,11 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
         "visual_available": bool(classifier is not None and classifier.available),
         "visual_unavailable": visual_mode == "on" and not bool(classifier is not None and classifier.available),
         "visual_gate_failed": visual_mode == "on" and visual_policy == "block" and not bool(classifier is not None and classifier.available),
+        "provenance_gate": provenance_gate,
+        "provenance_review": len(provenance_reviews),
+        "provenance_blocked": sum(
+            ((e.get("axes") or {}).get("provenance") or {}).get("action") == "block"
+            for e in entries),
     }
 
     report = {"summary": summary, "segments": entries, "blocked": blocked}
@@ -448,6 +463,15 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
             json.dump(report, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"[risk] could not update scorecard metadata: {e}")
+
+    try:
+        provenance_report = provenance.analyze_project(project_folder, policy=provenance_gate)
+        summary["provenance"] = provenance_report.get("summary", {})
+        report["summary"] = summary
+        with open(os.path.join(project_folder, SCORECARD_FILENAME), "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[risk] provenance report skipped: {}".format(e))
 
     blocklist_path = os.path.join(project_folder, PUBLISH_BLOCKLIST_FILENAME)
     if blocked:
