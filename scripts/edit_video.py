@@ -823,6 +823,10 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                     faces = valid_faces
             
             # --- ACTIVE SPEAKER UPDATE ---
+            activity_track_ids = face_tracker.update(
+                frame_index, [f['bbox'] for f in faces] if faces else [])
+            for face, track_id in zip(faces, activity_track_ids):
+                face['_track_id'] = track_id
             if faces:
                 # 1. Update activity scores for current faces
                 # Simple matching to previous state
@@ -918,12 +922,18 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                      best_idx = -1
                      if faces_activity_state:
                          for i, old_s in enumerate(faces_activity_state):
-                             old_c = old_s['center']
-                             dist = np.sqrt((my_c[0]-old_c[0])**2 + (my_c[1]-old_c[1])**2)
-                             if dist < best_dist:
-                                 best_dist = dist
+                             if old_s.get('track_id') == f.get('_track_id'):
                                  best_idx = i
-                     
+                                 best_dist = 0.0
+                                 break
+                         if best_idx == -1:
+                             for i, old_s in enumerate(faces_activity_state):
+                                 old_c = old_s['center']
+                                 dist = np.sqrt((my_c[0]-old_c[0])**2 + (my_c[1]-old_c[1])**2)
+                                 if dist < best_dist:
+                                     best_dist = dist
+                                     best_idx = i
+
                      if best_idx != -1 and best_dist < 200:
                          previous_mouth = float(faces_activity_state[best_idx].get('mouth_ratio', f.get('mouth_ratio', 0.0)))
                          current_mouth = float(f.get('mouth_ratio', 0.0))
@@ -958,6 +968,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                      
                      f['activity_score'] = matched_score
                      current_state_map.append({
+                         'track_id': f.get('_track_id'),
                          'center': f['center'],
                          'activity': matched_score,
                          'mouth_ratio': f.get('mouth_ratio_smooth', f.get('mouth_ratio', 0.0)),

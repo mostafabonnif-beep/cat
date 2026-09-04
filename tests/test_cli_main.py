@@ -228,16 +228,15 @@ def test_safety_stage_exits_when_everything_blocked(cli, tmp_path, monkeypatch):
     assert exc.value.code == 1
 
 
-def test_safety_stage_survives_filter_exception(cli, tmp_path, monkeypatch):
-    """A crashing filter must never kill the pipeline — segments pass through."""
-    def boom(*a, **k):
+def test_safety_stage_fails_closed_when_filter_errors(cli, tmp_path, monkeypatch):
+    def boom(*_args, **_kwargs):
         raise RuntimeError("filter exploded")
     monkeypatch.setattr(cli.safety_filter, "apply_safety_filter", boom)
-    segs = _segments("anything")
-    out = cli.run_safety_stage(segs, project_folder=str(tmp_path),
-                               args=_safety_args(), ai_backend="manual",
-                               api_key=None, workflow_choice="1")
-    assert out is segs
+    with pytest.raises(SystemExit) as exc:
+        cli.run_safety_stage(_segments("anything"), project_folder=str(tmp_path),
+                             args=_safety_args(), ai_backend="manual",
+                             api_key=None, workflow_choice="1")
+    assert exc.value.code == 1
 
 
 

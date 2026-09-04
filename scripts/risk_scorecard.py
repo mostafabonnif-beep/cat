@@ -27,6 +27,7 @@ import subprocess
 
 from scripts import visual_check as visual_check_module
 from scripts.safety_filter import find_matches
+from scripts import content_ledger
 
 SCORECARD_FILENAME = "risk_scorecard.json"
 PUBLISH_BLOCKLIST_FILENAME = "publish_blocklist.json"
@@ -74,14 +75,18 @@ def _hamming(a, b):
     return bin(a ^ b).count("1")
 
 
-def frame_similarity(video_a, video_b, sample_points):
-    """Average similarity (0..100) between two videos at given relative points."""
-    if not sample_points:
+def frame_similarity(video_a, video_b, sample_points, other_points=None):
+    """Compare frames at independent timestamps in two video files."""
+    left_points = list(sample_points or [])
+    right_points = list(other_points) if other_points is not None else left_points
+    if len(left_points) != len(right_points):
+        raise ValueError("sample_points and other_points must have equal length")
+    if not left_points:
         return None
     hashes = []
-    for frac in sample_points:
-        ha = _grab_gray_frame(video_a, frac)
-        hb = _grab_gray_frame(video_b, frac)
+    for left_point, right_point in zip(left_points, right_points):
+        ha = _grab_gray_frame(video_a, left_point)
+        hb = _grab_gray_frame(video_b, right_point)
         if ha is None or hb is None:
             continue
         hashes.append(1.0 - _hamming(_dhash(ha), _dhash(hb)) / 64.0)
@@ -254,14 +259,23 @@ def score_segment(segment, index, project_folder, words, source_video,
     entry["axes"]["text"] = text_scores
 
     # --- reuse / transformation axis (the Content ID + reused-content risk) ---
-    reuse = {"similarity": None, "letterboxed": 0.0, "score": 0}
+    reuse = {
+        "similarity": None,
+        "letterboxed": 0.0,
+        "clip_sample_points": [],
+        "source_sample_points": [],
+        "score": 0,
+    }
     clip = _find_clip_video(project_folder, index)
     if clip and source_video and os.path.exists(clip):
         points = [0.15, 0.5, 0.85]
-        sim = frame_similarity(clip, source_video,
-                               [seg_start + (seg_end - seg_start) * f for f in points])
+        clip_points = [duration * f for f in points]
+        source_points = [seg_start + duration * f for f in points]
+        sim = frame_similarity(clip, source_video, clip_points, source_points)
         if sim is not None:
             reuse["similarity"] = sim
+            reuse["clip_sample_points"] = clip_points
+            reuse["source_sample_points"] = source_points
             reuse["letterboxed"] = _letterbox_ratio(clip, 0.5 * duration)
             score = 0.75 * sim + 15.0 * reuse["letterboxed"]
             if duration > 60:
@@ -418,6 +432,22 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
             json.dump(report, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"[risk] could not save scorecard: {e}")
+
+    try:
+        for entry in entries:
+            content_ledger.record_clip_audit(
+                project_folder, entry.get("index"), entry,
+                _find_clip_video(project_folder, entry.get("index")))
+        summary["database"] = content_ledger.ledger_summary(project_folder)["database"]
+    except Exception as e:
+        print("[risk] ledger write skipped: {}".format(e))
+
+    report["summary"] = summary
+    try:
+        with open(os.path.join(project_folder, SCORECARD_FILENAME), "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[risk] could not update scorecard metadata: {e}")
 
     blocklist_path = os.path.join(project_folder, PUBLISH_BLOCKLIST_FILENAME)
     if blocked:

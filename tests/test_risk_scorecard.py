@@ -53,6 +53,18 @@ class TestFrameSimilarity:
         assert rs.frame_similarity(str(tmp_path / "nope.mp4"),
                                    str(tmp_path / "nope2.mp4"), [0.5]) is None
 
+    def test_independent_timestamps_compare_clip_to_source_window(self, monkeypatch):
+        calls = []
+
+        def fake_grab(path, at_seconds, width=9, height=8):
+            calls.append((path, at_seconds))
+            return [0] * (width * height)
+
+        monkeypatch.setattr(rs, "_grab_gray_frame", fake_grab)
+        score = rs.frame_similarity("clip.mp4", "source.mp4", [0.5], [42.5])
+        assert score == 100.0
+        assert calls == [("clip.mp4", 0.5), ("source.mp4", 42.5)]
+
 
 class TestLetterbox:
     @pytest.mark.skipif(not FFMPEG, reason="ffmpeg not available")

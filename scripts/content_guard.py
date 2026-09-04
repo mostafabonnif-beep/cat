@@ -515,6 +515,11 @@ def filter_segments(project_folder: str, segments: list[dict[str, Any]] | None,
         "database": _registry_path(project_folder, registry_path),
     }
     _write_json_atomic(os.path.join(project_folder, REPORT_FILENAME), report)
+    try:
+        from scripts import content_ledger
+        content_ledger.record_safety_report(project_folder, report, registry_path)
+    except Exception:
+        pass
     return kept, report
 
 

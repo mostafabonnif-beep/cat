@@ -387,6 +387,9 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
             save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
     except Exception as e:
         print(i18n("Safety filter failed (continuing without it): {}").format(e))
+        if getattr(args, "safety_fail_closed", "on") == "on" and args.safety_mode in ("block", "censor"):
+            print(i18n("Safety filter failed; fail-closed policy refuses to continue."))
+            sys.exit(1)
 
     # 3.8. Second-pass AI policy review (context-level violations)
     if safety_ai.should_run_ai_review(ai_backend, args.safety_ai) and viral_segments.get("segments"):
@@ -426,6 +429,9 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
                     print(i18n("AI review: all surviving segments look clean ✔"))
         except Exception as e:
             print(i18n("AI safety review failed (continuing): {}").format(e))
+            if getattr(args, "safety_fail_closed", "on") == "on" and args.safety_mode in ("block", "censor"):
+                print(i18n("AI safety review failed; fail-closed policy refuses to continue."))
+                sys.exit(1)
     elif args.safety_ai == "on" and args.safety_mode != "off":
         debug(f"AI safety review skipped for backend '{ai_backend}' (needs gemini/g4f).")
 
@@ -556,6 +562,8 @@ def main():
     parser.add_argument("--safety-extra-terms", help="Path to a safety_terms.json file with extra blocked terms")
     parser.add_argument("--safety-ai", choices=["on", "off"], default="on",
                         help="Second-pass AI policy review of surviving segments (context-level violations keywords can't catch). Only used with gemini/g4f backends. Default: on")
+    parser.add_argument("--safety-fail-closed", choices=["on", "off"], default="on",
+                        help="Refuse to continue when an enabled safety check errors (default: on)")
     parser.add_argument("--safety-autoupdate", choices=["on", "off"], default="on",
                         help="Auto-update the hate-speech word list from GitHub once a day (offline-safe). Default: on")
     parser.add_argument("--risk-scorecard", choices=["on", "off"], default="on",
