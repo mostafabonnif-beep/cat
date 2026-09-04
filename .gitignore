@@ -79,3 +79,5 @@ youtube_policy_feed.json
 # Pipeline runner lock (runtime)
 .pipeline_runner.lock
 pipeline_runner_state.json
+
+.oussama_policy_lexicon.sqlite3

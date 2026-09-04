@@ -471,7 +471,14 @@ def _build_index(extra_terms=None):
             "severity": severity,
             "category": category,
         })
-    # longer phrases first so multi-word matches win
+    unique = {}
+    severity_rank = {"low": 1, "medium": 2, "high": 3}
+    for entry in index:
+        key = (entry["norm"], entry["lang"], entry["category"])
+        previous = unique.get(key)
+        if previous is None or severity_rank.get(entry["severity"], 3) > severity_rank.get(previous["severity"], 3):
+            unique[key] = entry
+    index = list(unique.values())
     index.sort(key=lambda e: len(e["tokens"]), reverse=True)
     return index
 
@@ -681,6 +688,11 @@ def load_custom_terms(project_folder=None, extra_path=None):
                 result["allow_terms"].extend(data.get("allow_terms", []))
         except Exception as e:
             print(f"[safety] Could not read custom terms from {path}: {e}")
+    try:
+        from scripts import policy_lexicon
+        result["extra_terms"].extend(policy_lexicon.load_terms(project_folder, sync=True))
+    except Exception:
+        pass
     return result
 
 
