@@ -1057,6 +1057,20 @@ def main():
             print("[autopilot] Gemini was selected but no API key is configured.")
             return 1
 
+    if args.autopilot:
+        from scripts import autopilot
+        readiness = autopilot.check_readiness(args, ai_backend, api_key)
+        readiness_path = autopilot.write_report(project_folder, readiness)
+        for warning in readiness.get("warnings", []):
+            print("[autopilot] warning: {}".format(warning["detail"]))
+        if not readiness["ok"]:
+            print("[autopilot] prerequisites are not ready; no media processing started.")
+            for issue in readiness.get("issues", []):
+                print("[autopilot] ✗ {}".format(issue["detail"]))
+            if readiness_path:
+                print("[autopilot] readiness report: {}".format(readiness_path))
+            return 1
+
     # Workflow & Face Config Inputs
     workflow_choice = args.workflow
     face_model = args.face_model
