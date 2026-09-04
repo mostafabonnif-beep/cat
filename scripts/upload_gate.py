@@ -78,6 +78,12 @@ def _blocklist_reasons(project_folder, index):
             "detail": "visual safety scan was required but no usable local model was available",
             "severity": "high",
         })
+    if summary.get("ocr_gate_failed"):
+        reasons.append({
+            "source": "ocr_safety",
+            "detail": "OCR safety scan was required but no usable Tesseract installation was available",
+            "severity": "high",
+        })
     data = _load_json(project_folder, PUBLISH_BLOCKLIST)
     if not data:
         return reasons

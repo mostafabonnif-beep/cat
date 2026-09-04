@@ -29,6 +29,7 @@ from scripts import visual_check as visual_check_module
 from scripts.safety_filter import find_matches
 from scripts import content_ledger
 from scripts import provenance
+from scripts import ocr_safety
 
 SCORECARD_FILENAME = "risk_scorecard.json"
 PUBLISH_BLOCKLIST_FILENAME = "publish_blocklist.json"
@@ -229,14 +230,14 @@ def _load_words(project_folder):
 
 def score_segment(segment, index, project_folder, words, source_video,
                   visual_model_path=None, visual_classifier=None, safety_entry=None,
-                  provenance_entry=None, visual_frames=4, visual_threshold=VISUAL_GRAPHIC_THRESHOLD):
+                  provenance_entry=None, ocr_entry=None, visual_frames=4, visual_threshold=VISUAL_GRAPHIC_THRESHOLD):
     """Compute the risk axes for one segment. Returns a dict (never raises)."""
     entry = {
         "index": index,
         "title": segment.get("title", f"Segment_{index}"),
         "start_time": segment.get("start_time"),
         "end_time": segment.get("end_time"),
-        "axes": {"provenance": provenance_entry or {}},
+        "axes": {"provenance": provenance_entry or {}, "ocr": ocr_entry or {}},
         "overall": "unknown",
         "overall_score": 0,
     }
@@ -330,7 +331,8 @@ def score_segment(segment, index, project_folder, words, source_video,
 def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REUSE_THRESHOLD,
                     visual_model_path=None, auto_download_visual=False, i18n=lambda k: k,
                     visual_check="auto", visual_gate="warn", visual_frames=4,
-                    visual_threshold=VISUAL_GRAPHIC_THRESHOLD, provenance_gate="warn"):
+                    visual_threshold=VISUAL_GRAPHIC_THRESHOLD, provenance_gate="warn",
+                    ocr_check="auto", ocr_gate="warn", ocr_frames=4, ocr_lang="ara+eng"):
     """Score every segment, persist risk_scorecard.json + publish_blocklist.json.
 
     Returns {"segments": [...], "blocked": [...], "summary": {...}}.
@@ -349,6 +351,12 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
     visual_policy = str(visual_gate or "warn").lower()
     if visual_policy not in {"off", "warn", "block"}:
         visual_policy = "warn"
+    ocr_mode = str(ocr_check or "auto").lower()
+    if ocr_mode not in {"off", "auto", "on"}:
+        ocr_mode = "auto"
+    ocr_policy = str(ocr_gate or "warn").lower()
+    if ocr_policy not in {"off", "warn", "block"}:
+        ocr_policy = "warn"
     classifier = None
     model_path = visual_model_path
     if visual_mode != "off":
@@ -386,10 +394,23 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
 
     entries = []
     for i, seg in enumerate(segments):
+        clip_path = _find_clip_video(project_folder, i)
+        ocr_entry = {}
+        if ocr_mode != "off" and clip_path and os.path.exists(clip_path):
+            try:
+                ocr_entry = ocr_safety.analyze_video(
+                    clip_path, frames=ocr_frames, language=ocr_lang)
+            except Exception as exc:
+                ocr_entry = {"available": False, "status": "error",
+                             "action": "review", "score": 0, "reason": str(exc)[:300]}
+        elif ocr_mode == "on":
+            ocr_entry = {"available": False, "status": "no_clip",
+                         "action": "review", "score": 0, "reason": "clip_not_found"}
         entries.append(score_segment(seg, i, project_folder, words,
                                      source_video, visual_model_path=model_path,
                                      visual_classifier=classifier,
                                      safety_entry=safety_entries.get(i),
+                                     ocr_entry=ocr_entry,
                                      visual_frames=visual_frames,
                                      visual_threshold=visual_threshold))
 
@@ -414,10 +435,15 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
         visual = (entry.get("axes") or {}).get("visual") or {}
         return visual_policy != "off" and float(visual.get("score", 0) or 0) >= float(visual_threshold)
 
+    def _ocr_blocked(entry):
+        ocr = (entry.get("axes") or {}).get("ocr") or {}
+        return ocr_policy == "block" and ocr.get("action") == "block"
+
     blocked = [e for e in entries if
                ((e.get("axes") or {}).get("reuse") or {}).get("score", 0) >= gate_threshold
                or _non_visual_score(e) >= 70.0
                or _visual_blocked(e)
+               or _ocr_blocked(e)
                or ((e.get("axes") or {}).get("provenance") or {}).get("action") == "block"]
 
     summary = {
@@ -434,6 +460,12 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
         "visual_available": bool(classifier is not None and classifier.available),
         "visual_unavailable": visual_mode == "on" and not bool(classifier is not None and classifier.available),
         "visual_gate_failed": visual_mode == "on" and visual_policy == "block" and not bool(classifier is not None and classifier.available),
+        "ocr_check": ocr_mode,
+        "ocr_gate": ocr_policy,
+        "ocr_available": any(((e.get("axes") or {}).get("ocr") or {}).get("available") for e in entries),
+        "ocr_unavailable": ocr_mode == "on" and not any(((e.get("axes") or {}).get("ocr") or {}).get("available") for e in entries),
+        "ocr_gate_failed": ocr_mode == "on" and ocr_policy == "block" and not any(((e.get("axes") or {}).get("ocr") or {}).get("available") for e in entries),
+        "ocr_blocked": sum(_ocr_blocked(e) for e in entries),
         "provenance_gate": provenance_gate,
         "provenance_review": len(provenance_reviews),
         "provenance_blocked": sum(

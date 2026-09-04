@@ -632,6 +632,14 @@ def main():
                         help="Number of frames sampled per rendered clip (default: 4)")
     parser.add_argument("--visual-model", default=None,
                         help="Path to a local ONNX visual safety classifier")
+    parser.add_argument("--ocr-check", choices=["off", "auto", "on"], default="auto",
+                        help="OCR scan for hateful/inciting text burned into video frames")
+    parser.add_argument("--ocr-gate", choices=["off", "warn", "block"], default="warn",
+                        help="OCR safety policy: warn records findings, block refuses OCR-detected violations")
+    parser.add_argument("--ocr-frames", type=int, default=4,
+                        help="Number of video frames sampled by OCR (default: 4)")
+    parser.add_argument("--ocr-lang", default="ara+eng",
+                        help="Tesseract language pack for OCR (default: ara+eng)")
     parser.add_argument("--allow-placeholder-transcription", action="store_true",
                         help="When whisperx/torch are missing, continue with placeholder subtitles (for testing editing/safety only — NOT for real viral-segment selection)")
     parser.add_argument("--cookies-from-browser", choices=["chrome", "firefox", "edge", "safari", "brave", "opera", "vivaldi"], default=None,
@@ -1690,6 +1698,8 @@ def main():
                     visual_frames=args.visual_frames,
                     visual_model_path=args.visual_model,
                     provenance_gate=args.provenance_gate,
+                    ocr_check=args.ocr_check, ocr_gate=args.ocr_gate,
+                    ocr_frames=args.ocr_frames, ocr_lang=args.ocr_lang,
                 )
                 if report is None:
                     report = risk_scorecard.analyze_project(
@@ -1699,7 +1709,9 @@ def main():
                         visual_gate=args.visual_gate,
                         visual_frames=args.visual_frames,
                         visual_model_path=args.visual_model,
-                        provenance_gate=args.provenance_gate)
+                        provenance_gate=args.provenance_gate,
+                        ocr_check=args.ocr_check, ocr_gate=args.ocr_gate,
+                        ocr_frames=args.ocr_frames, ocr_lang=args.ocr_lang)
                 summary = report.get("summary", {})
                 if summary.get("visual_unavailable"):
                     print("[risk] ⚠️ Visual scan unavailable: no usable local ONNX model; "
@@ -1707,6 +1719,11 @@ def main():
                 if summary.get("visual_gate_failed"):
                     print("[risk] Visual safety scan is required but no usable local model is available. "
                           "Install/download the model, or use --visual-check auto with --visual-gate warn.")
+                    sys.exit(1)
+                if summary.get("ocr_unavailable"):
+                    print("[risk] OCR scan unavailable: install Tesseract with Arabic and English language packs.")
+                if summary.get("ocr_gate_failed"):
+                    print("[risk] OCR safety scan is required but unavailable; refusing to continue.")
                     sys.exit(1)
                 blocked = report.get("blocked", [])
                 provenance_summary = (report.get("summary") or {}).get("provenance") or {}
