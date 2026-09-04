@@ -562,6 +562,8 @@ def main():
     parser.add_argument("--safety-extra-terms", help="Path to a safety_terms.json file with extra blocked terms")
     parser.add_argument("--safety-ai", choices=["on", "off"], default="on",
                         help="Second-pass AI policy review of surviving segments (context-level violations keywords can't catch). Only used with gemini/g4f backends. Default: on")
+    parser.add_argument("--autopilot", action="store_true",
+                        help="Run the end-to-end safety autopilot: AI review, OCR, visual checks, provenance, audio QC, metadata, and hard publish gates.")
     parser.add_argument("--safety-fail-closed", choices=["on", "off"], default="on",
                         help="Refuse to continue when an enabled safety check errors (default: on)")
     parser.add_argument("--safety-autoupdate", choices=["on", "off"], default="on",
@@ -683,6 +685,29 @@ def main():
                              "See scripts/strike_feedback.py.")
 
     args = parser.parse_args()
+
+    if args.autopilot:
+        args.skip_prompts = True
+        args.safety_mode = "block"
+        args.safety_ai = "on"
+        args.safety_fail_closed = "on"
+        args.safety_autoupdate = "on"
+        args.risk_scorecard = "on"
+        args.risk_gate = "block"
+        args.provenance_gate = "block"
+        args.metadata_gate = "block"
+        args.audio_qc = "on"
+        args.audio_qc_gate = "block"
+        args.music_check = "on"
+        args.music_gate = "block"
+        args.visual_check = "on"
+        args.visual_gate = "block"
+        args.ocr_check = "on"
+        args.ocr_gate = "block"
+        args.focus_active_speaker = True
+        args.polish = "on"
+        args.auto_learn_blocked = True
+        print("[autopilot] Strict AI-assisted safety mode enabled; missing or failed checks will stop the run.")
 
     if args.webui:
         return _launch_webui()
@@ -1019,6 +1044,18 @@ def main():
              else:
                  print(i18n("Gemini API Key not found in api_config.json or arguments."))
                  api_key = input(i18n("Enter your Gemini API Key: ")).strip()
+
+    if args.autopilot:
+        if ai_backend == "manual":
+            ai_backend = api_config.get("selected_api") or ("gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "manual")
+        if ai_backend == "gemini" and not api_key:
+            api_key = os.getenv("GEMINI_API_KEY", "").strip() or api_config.get("gemini", {}).get("api_key", "")
+        if ai_backend not in {"gemini", "g4f"}:
+            print("[autopilot] A Gemini or G4F AI backend is required; manual/local mode cannot provide the context safety review.")
+            return 1
+        if ai_backend == "gemini" and not api_key:
+            print("[autopilot] Gemini was selected but no API key is configured.")
+            return 1
 
     # Workflow & Face Config Inputs
     workflow_choice = args.workflow
