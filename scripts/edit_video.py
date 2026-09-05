@@ -18,8 +18,8 @@ except ImportError:
     MEDIAPIPE_AVAILABLE = False
     print("MediaPipe not found. Install with: pip install mediapipe — will fall back to OpenCV Haar Cascade if needed.")
 from scripts.active_speaker import ActiveSpeakerSelector
-from scripts.face_tracker import FaceTracker
 from scripts.audio_analysis import get_audio_energy
+from scripts.face_tracker import FaceTracker
 from scripts.media_validation import validate_media_file
 from scripts.one_face import (
     crop_and_resize_single_face,

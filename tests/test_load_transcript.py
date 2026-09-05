@@ -2,7 +2,6 @@
 transcript artifacts named after the video (local/external files keep their
 original basename — v7.27 fix for "Could not parse transcript from TSV or SRT")."""
 
-import os
 
 import pytest
 

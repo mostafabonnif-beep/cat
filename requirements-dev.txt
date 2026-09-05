@@ -2,6 +2,7 @@
 # v7.19 fix: the WebUI + video tests need the full lightweight stack —
 # previously CI failed at collection with ModuleNotFoundError (cv2, gradio).
 pytest>=8.0
+ruff>=0.9
 numpy<2
 cryptography
 

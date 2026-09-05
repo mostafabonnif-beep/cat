@@ -1,6 +1,5 @@
 """Unit tests for the lightweight identity tracker (scripts/face_tracker.py)."""
 
-import pytest
 
 from scripts.face_tracker import FaceTracker
 

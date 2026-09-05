@@ -25,11 +25,9 @@ import json
 import os
 import subprocess
 
+from scripts import content_ledger, ocr_safety, provenance
 from scripts import visual_check as visual_check_module
 from scripts.safety_filter import find_matches
-from scripts import content_ledger
-from scripts import provenance
-from scripts import ocr_safety
 
 SCORECARD_FILENAME = "risk_scorecard.json"
 PUBLISH_BLOCKLIST_FILENAME = "publish_blocklist.json"
