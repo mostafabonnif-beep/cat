@@ -1497,15 +1497,23 @@ def main():
             if args.safety_mode == "censor":
                 print(i18n("Censoring violating words (bleep mode)..."))
                 try:
-                    censor_engine.censor_project(
+                    censor_map = censor_engine.censor_project(
                         project_folder,
                         viral_segments,
                         min_severity=args.safety_min_severity,
                         extra_terms_path=args.safety_extra_terms,
                         i18n=i18n,
                     )
+                    if not isinstance(censor_map, dict):
+                        raise RuntimeError("censoring returned an invalid result")
+                    censor_errors = censor_map.get("errors", [])
+                    if censor_map.get("error") or censor_errors:
+                        detail = censor_map.get("error") or censor_errors
+                        raise RuntimeError("censoring did not verify every flagged word: {}".format(detail))
                 except Exception as e:
-                    print(i18n("Censoring failed (continuing without it): {}").format(e))
+                    print(i18n("Censoring failed: {} — fail-closed; nothing will be published.").format(e))
+                    if getattr(args, "safety_fail_closed", "on") == "on":
+                        sys.exit(1)
         
         # 5. Workflow Check
         if workflow_choice == "2":

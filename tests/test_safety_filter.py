@@ -80,6 +80,25 @@ class TestMatching:
         matches = sf.find_matches("قال تعالى عن الكفار", min_severity="high")
         assert matches == []
 
+    def test_identity_reference_is_context_only(self):
+        matches = sf.find_matches("هذا فيديو عن سعودي يعيش في دبي")
+        assert matches
+        assert all(m["severity"] == "low" for m in matches)
+        assert all(m["category"] == "context_only_identity" for m in matches)
+        assert sf.find_matches("هذا فيديو عن سعودي يعيش في دبي", min_severity="medium") == []
+
+    def test_identity_plus_hate_is_detected(self):
+        matches = sf.find_matches("السعوديين حشرات يجب طردهم")
+        categories = {m["category"] for m in matches}
+        assert "hate_dehumanize" in categories or "hate_exclusion" in categories
+
+    def test_identity_reference_does_not_block_clean_segment(self):
+        segments = [{"title": "وصفة", "start_time": 0, "end_time": 5}]
+        transcript = [{"start": 0, "end": 5, "text": "سعودي يشرح وصفة طبخ"}]
+        kept, report = sf.analyze_segments(segments, transcript, mode="block")
+        assert len(kept) == 1
+        assert report["blocked"] == 0
+
     def test_maghrebi_dialect(self):
         matches = sf.find_matches("هذا الزامل يستهزئ بالناس")
         assert any(m["term"] == "زامل" for m in matches)

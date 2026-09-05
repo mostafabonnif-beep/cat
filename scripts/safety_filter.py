@@ -384,6 +384,22 @@ BLOCKLIST = [
 
 SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3}
 
+# Identity words are not hate speech by themselves. They need an explicit
+# attack, exclusion, dehumanizing comparison, or call to harm around them.
+# Keep them visible in reports as low-severity context signals, but never let
+# a bare nationality, religion, ethnicity, or demographic label block a clip.
+CONTEXT_ONLY_TERMS = {
+    "افريقي", "افارقه", "اسيوي", "امازيغي", "امازيغ", "اماراتي", "ايراني",
+    "اقباط", "اعرابي", "بدو", "خليجي", "درزي", "سعودي", "سوداني", "سوري",
+    "صهيوني", "صهاينه", "صومالي", "صيني", "عربي", "عرب", "قبطي", "قطري",
+    "كويتي", "لاجئ", "لاجئين", "مسيحي", "مسيحيين", "مسلم", "مسلمين",
+    "ملحد", "ملحدين", "مهاجر", "مهاجرين", "مثليين", "مثليات", "يهودي",
+    "يهود", "نصراني", "نصارى", "شيعي", "شيعة", "سني", "سنة", "نساء",
+    "رجال", "معاقين", "ذوي اعاقه", "غجر", "black people", "white people",
+    "jews", "muslims", "christians", "immigrants", "refugees", "foreigners",
+    "women", "men", "gay people", "disabled people",
+}
+
 # ---------------------------------------------------------------------------
 # Normalization
 # ---------------------------------------------------------------------------
@@ -459,6 +475,7 @@ def _build_index(extra_terms=None):
                 ))
             elif isinstance(e, str):
                 entries.append((e, "custom", "high", "custom"))
+    context_only_norms = {normalize_text(term) for term in CONTEXT_ONLY_TERMS}
     for phrase, lang, severity, category in entries:
         norm = normalize_text(phrase)
         if not norm:
@@ -470,6 +487,7 @@ def _build_index(extra_terms=None):
             "lang": lang,
             "severity": severity,
             "category": category,
+            "context_only": norm in context_only_norms,
         })
     unique = {}
     severity_rank = {"low": 1, "medium": 2, "high": 3}
@@ -513,7 +531,8 @@ def find_matches(text, index=None, min_severity="low", allow_terms=None):
     matches = []
     min_rank = SEVERITY_ORDER.get(min_severity, 1)
     for entry in index:
-        if SEVERITY_ORDER.get(entry["severity"], 3) < min_rank:
+        effective_severity = "low" if entry.get("context_only") else entry["severity"]
+        if SEVERITY_ORDER.get(effective_severity, 3) < min_rank:
             continue
         if entry["norm"] in allow_norms:
             continue
@@ -525,8 +544,8 @@ def find_matches(text, index=None, min_severity="low", allow_terms=None):
             matches.append({
                 "term": entry["term"],
                 "lang": entry["lang"],
-                "severity": entry["severity"],
-                "category": entry["category"],
+                "severity": effective_severity,
+                "category": "context_only_identity" if entry.get("context_only") else entry["category"],
                 "word_index": max(0, approx_word - 1),
             })
     return matches

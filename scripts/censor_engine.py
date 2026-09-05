@@ -92,6 +92,8 @@ def _word_matches_blocklist(norm_words, index, min_rank, allow_norms):
     """
     n = len(norm_words)
     for entry in index:
+        if entry.get("context_only"):
+            continue
         if SEVERITY_ORDER.get(entry["severity"], 3) < min_rank:
             continue
         if entry["norm"] in allow_norms:
@@ -286,7 +288,7 @@ def censor_project(project_folder, viral_segments, min_severity="medium",
     cuts_folder = os.path.join(project_folder, "cuts")
     subs_folder = os.path.join(project_folder, "subs")
 
-    censor_map = {"mode": "censor", "min_severity": min_severity, "segments": {}}
+    censor_map = {"mode": "censor", "min_severity": min_severity, "segments": {}, "errors": []}
     total_muted = 0
 
     for i, segment in enumerate(segments):
@@ -315,8 +317,18 @@ def censor_project(project_folder, viral_segments, min_severity="medium",
             cuts_folder, "{:03d}_*_original_scale.mp4".format(i))))
         if cut_matches:
             entry["video_censored"] = apply_audio_censor(cut_matches[0], spans_rel, i18n=i18n)
+            if not entry["video_censored"]:
+                censor_map["errors"].append({
+                    "index": i,
+                    "error": "audio_censor_failed",
+                    "video": cut_matches[0],
+                })
         else:
             entry["video_censored"] = False
+            censor_map["errors"].append({
+                "index": i,
+                "error": "cut_video_missing",
+            })
             print(i18n("[censor] Cut video not found for segment {} — audio not muted.").format(i))
 
         # 2) mask subtitle JSON
@@ -325,6 +337,16 @@ def censor_project(project_folder, viral_segments, min_severity="medium",
         entry["subtitle_masked"] = 0
         for sub_path in sub_matches:
             entry["subtitle_masked"] += mask_subtitle_json(sub_path, spans_rel)
+        if not sub_matches:
+            censor_map["errors"].append({
+                "index": i,
+                "error": "subtitle_file_missing",
+            })
+        elif entry["subtitle_masked"] == 0:
+            censor_map["errors"].append({
+                "index": i,
+                "error": "subtitle_words_not_masked",
+            })
 
         censor_map["segments"][str(i)] = entry
         total_muted += len(spans_rel)

@@ -20,6 +20,17 @@ def test_normal_text_is_allowed():
     verdict = semantic_safety.analyze_text("نصائح عملية لتحسين جودة الفيديو والصوت")
     assert verdict["action"] == "allow"
 
+def test_identity_reference_alone_is_allowed():
+    verdict = semantic_safety.analyze_text("سعودي يشرح وصفة طبخ")
+    assert verdict["action"] == "allow"
+
+
+def test_identity_plus_dehumanization_is_blocked():
+    verdict = semantic_safety.analyze_text("السعوديين حشرات ويجب طردهم")
+    assert verdict["action"] == "block"
+    assert "protected_or_collective_target" in verdict["signals"]
+    assert "dehumanizing_comparison" in verdict["signals"]
+
 
 def test_safety_filter_persists_semantic_verdict(tmp_path):
     segments = [{

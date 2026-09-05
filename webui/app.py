@@ -1490,7 +1490,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                         workflow_input = gr.Dropdown(choices=[(i18n("Full"), "Full"), (i18n("Cut Only"), "Cut Only"), (i18n("Subtitles Only"), "Subtitles Only")], label=i18n("Workflow"), value="Full")
                         face_model_input = gr.Dropdown(["insightface", "mediapipe"], label=i18n("Face Model"), value="insightface")
                     gr.Markdown("### 🛡️ " + i18n("Safety"))
-                    gr.Markdown("**قاعدة النشر الآمن:** الحظر يوقف المقطع قبل القص والرفع، وcensor يكتم الكلمات الحساسة، أما flag فيُبقي المقطع للمراجعة اليدوية.", elem_classes=["vc-help-card"])
+                    gr.Markdown("**قاعدة النشر الآمن:** الحظر يوقف المقطع قبل القص والرفع، وcensor يكتم الكلمات الحساسة، أما flag فيُبقي المقطع للمراجعة اليدوية. ذكر الجنسية أو الدين أو المجموعة وحده لا يُعد مخالفة؛ الحجب يعتمد على الإهانة أو التجريد من الإنسانية أو التحريض على الطرد/العنف.", elem_classes=["vc-help-card"])
                     safety_mode_input = gr.Dropdown(
                         choices=[(i18n("Block violating segments (recommended)"), "block"), (i18n("Bleep violating words (keep clip)"), "censor"), (i18n("Flag only (keep segments)"), "flag"), (i18n("Off"), "off")],
                         label=i18n("🛡️ Safety filter (hate speech)"),

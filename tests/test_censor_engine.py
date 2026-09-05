@@ -72,6 +72,10 @@ class TestComputeSpans:
                  {"word": "وسفر", "start": 0.5, "end": 1.0}]
         assert ce.compute_censor_spans(SEGMENT, clean) == []
 
+    def test_identity_label_is_not_bleeped_by_itself(self):
+        words = [{"word": "سعودي", "start": 0.0, "end": 0.5}]
+        assert ce.compute_censor_spans(SEGMENT, words) == []
+
 
 class TestRelativeSpans:
     def test_relative_conversion(self):
@@ -215,3 +219,10 @@ class TestCensorProject:
         project.mkdir()
         cmap = ce.censor_project(str(project), {"segments": [dict(SEGMENT)]})
         assert cmap.get("error") == "no_word_transcript"
+
+    def test_missing_subtitles_are_reported(self, tmp_path):
+        project = self._make_project(tmp_path)
+        for subtitle in (tmp_path / "proj" / "subs").glob("*.json"):
+            subtitle.unlink()
+        cmap = ce.censor_project(project, {"segments": [dict(SEGMENT)]})
+        assert any(error["error"] == "subtitle_file_missing" for error in cmap["errors"])
