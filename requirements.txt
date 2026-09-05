@@ -5,7 +5,6 @@ yt-dlp[default]
 ffmpeg-python
 mediapipe
 google-genai
-google-generativeai
 insightface
 gradio
 opencv-python

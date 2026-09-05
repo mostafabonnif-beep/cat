@@ -4,6 +4,7 @@ import datetime
 import html as html_lib
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -3210,6 +3211,29 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     auto_upload_public_confirm_input, auto_upload_interval_minutes_input
     ], outputs=[batch_df, batch_summary, logs_output, start_btn, stop_btn, results_html, progress_panel, tasks_panel, errors_panel])
 
+def _resolve_webui_port(preferred=7860, search_limit=20):
+    """Use the requested port or choose the first free local WebUI port."""
+    configured = os.getenv("GRADIO_SERVER_PORT", "").strip()
+    if configured:
+        try:
+            port = int(configured)
+        except ValueError:
+            raise RuntimeError("GRADIO_SERVER_PORT must be an integer") from None
+        if not 1 <= port <= 65535:
+            raise RuntimeError("GRADIO_SERVER_PORT must be between 1 and 65535")
+        return port
+
+    for port in range(preferred, preferred + search_limit):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise RuntimeError("No free WebUI port found near {}".format(preferred))
+
+
 def _resolve_webui_host():
     """Host to bind. Defaults to loopback; VIRALCUTTER_HOST overrides it.
 
@@ -3338,6 +3362,9 @@ def _launch(argv=None):
         demo.block_thread()
     else:
         is_windows = (os.name == 'nt')
+        webui_port = _resolve_webui_port()
+        if webui_port != 7860:
+            print(f"[webui] Port 7860 is busy; using port {webui_port}.")
         library.set_url_mode("fastapi")
         allowed_dirs = _allowed_dirs()
         try:
@@ -3389,7 +3416,7 @@ def _launch(argv=None):
                 allowed_paths=allowed_dirs,
                 inbrowser=True,
                 server_name=_resolve_webui_host(),
-                server_port=7860,
+                server_port=webui_port,
                 auth=_webui_auth(),
                 prevent_thread_lock=True,
                 **_launch_theme_kwargs
@@ -3437,7 +3464,7 @@ def _launch(argv=None):
                 app = gr.mount_gradio_app(app, demo.queue(), path="/", allowed_paths=allowed_dirs, ssr_mode=False)
             uvicorn.run(app,
                 host=_resolve_webui_host(),
-                port=7860,
+                port=webui_port,
                 log_level="info",
             )
 if __name__ == "__main__":
