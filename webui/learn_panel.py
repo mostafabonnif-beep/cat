@@ -198,10 +198,26 @@ def local_publish_summary(project_name=None, days=28, virals_dir=None):
     return "\n".join(lines)
 
 
-def run_analytics(kind, days=28):
-    """Run local or YouTube Analytics in-process. kind: local|summary|top|trends."""
+def run_analytics(kind, days=28, project_name=None):
+    """Run local or YouTube Analytics in-process. kind: local|insights|summary|top|trends."""
     if kind == "local":
         return local_publish_summary(days=days)
+    if kind == "insights":
+        try:
+            from scripts import performance_loop
+            from webui import library
+            root = library.VIRALS_DIR
+            project_path = os.path.join(root, project_name) if project_name else root
+            report = performance_loop.analyze(project_path)
+            performance_loop.write_report(project_path, report)
+            lines = [
+                "🔮 Performance loop — published: {} · with metrics: {}".format(
+                    report["published_count"], report["with_metrics"]),
+            ]
+            lines += ["  • " + insight for insight in report["insights"]]
+            return "\n".join(lines)
+        except Exception as e:
+            return "❌ Performance loop failed: %s" % e
     try:
         from scripts import analytics
         ya, yt = analytics._build_services()

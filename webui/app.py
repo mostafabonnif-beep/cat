@@ -3041,19 +3041,24 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 perf_top_btn = gr.Button(i18n("🏆 Top clips"))
                 perf_trends_btn = gr.Button(i18n("📅 Daily views"))
                 perf_local_btn = gr.Button("📁 تحليل سجل الرفع المحلي")
+            with gr.Row():
+                perf_project = gr.Dropdown(choices=library.get_existing_projects(), label=i18n("Project for insights"), value=None, scale=3)
+                perf_insights_btn = gr.Button("🔮 حلقة الأداء (ربط النتائج بالخصائص)", variant="secondary")
             perf_out = gr.Textbox(label=i18n("Analytics report"), lines=12, interactive=False)
 
-            def _perf(kind, days):
+            def _perf(kind, days, project_name=None):
                 try:
                     days = int(float(days or 28))
                 except Exception:
                     days = 28
-                return learn_panel.run_analytics(kind, days=days)
+                return learn_panel.run_analytics(kind, days=days, project_name=project_name)
 
             perf_summary_btn.click(lambda d: _perf("summary", d), inputs=[perf_days], outputs=perf_out)
             perf_top_btn.click(lambda d: _perf("top", d), inputs=[perf_days], outputs=perf_out)
             perf_trends_btn.click(lambda d: _perf("trends", d), inputs=[perf_days], outputs=perf_out)
             perf_local_btn.click(lambda d: _perf("local", d), inputs=[perf_days], outputs=perf_out)
+            perf_insights_btn.click(lambda d, pn: _perf("insights", d, pn),
+                                    inputs=[perf_days, perf_project], outputs=perf_out)
     with gr.Accordion("📜 سجل التشغيل", open=False, elem_id="vc-log-monitor"):
         with gr.Row():
             logs_output = gr.Textbox(label="تحديثات التشغيل", lines=12, autoscroll=True, elem_id="logs_output", scale=9)
