@@ -37,12 +37,12 @@ def init_insightface():
     global app
     if not INSIGHTFACE_AVAILABLE:
         raise ImportError("InsightFace not installed. Please install it.")
-    
+
     if app is None:
         # Provider options to reduce logging if possible (often needs env var)
         # But redirection is safer for C++ logs
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        
+
         try:
             import onnxruntime as ort
             available = ort.get_available_providers()
@@ -82,7 +82,7 @@ def detect_faces_insightface(frame):
              res['landmark_2d_106'] = face.landmark_2d_106
         if hasattr(face, 'landmark_3d_68') and face.landmark_3d_68 is not None:
              res['landmark_3d_68'] = face.landmark_3d_68
-             
+
         results.append(res)
     return results
 
@@ -96,67 +96,58 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
     used by professional Shorts editors. 0.0 .. 0.3 are sane values.
     """
     h, w, _ = frame.shape
-    x1, y1, x2, y2 = face_bbox
-    
-    face_center_x = (x1 + x2) // 2
-    face_center_y = (y1 + y2) // 2
-    
+    x1, y1, x2, y2 = [float(value) for value in face_bbox[:4]]
+    face_center_x = int(round((x1 + x2) / 2.0))
+    face_center_y = int(round((y1 + y2) / 2.0))
+
     # Calculate crop area based on target aspect ratio and face position
     # We want to keep the face roughly in the upper-middle or center?
     # Usually center for simple implementation, or slightly upper for "talking head".
-    
+
     # Logic similar to one_face.py but adapted
-    
+
     # Determine the scaling factor to ensure the crop covers the target height
     # Ideally we want the height of the video to match the target height after resize
     # But usually we source from landscape (16:9) to portrait (9:16).
     # We need to crop a 9:16 area from the source.
-    
+
     # Calculate source crop height/width maintaining 9:16 ratio
     # Trying to maximize height usage of the source frame usually.
-    
+
     # Let's say we want to use the full height of the source if possible
-    source_h = h
+    source_h = int(h)
     source_w = int(source_h * (target_width / target_height))
-    
+
     if source_w > w:
         # If the calculated width is wider than the source image, we are limited by width
-        source_w = w
+        source_w = int(w)
         source_h = int(source_w * (target_height / target_width))
 
     # Headroom: nudge the crop upward so the eyes land ~1/3 down the frame.
     # Each 0.1 shifts the crop center up by 10% of the crop height.
     if headroom > 0:
         shift = int(source_h * min(0.35, float(headroom)))
-        # Never push the face off-screen: cap shift so the crop still fits.
-        shift = min(shift, max(0, (face_center_y - y1) // 2))
+        shift = min(shift, max(0, int((face_center_y - y1) / 2.0)))
+    else:
+        shift = 0
 
     # Calculate top-left corner of the crop
-    crop_x1 = face_center_x - (source_w // 2)
-    crop_y1 = face_center_y - (source_h // 2)
-    if headroom > 0:
-        crop_y1 -= shift
-    
+    crop_x1 = int(face_center_x - (source_w // 2))
+    crop_y1 = int(face_center_y - (source_h // 2) - shift)
+
     # Adjust to stay within bounds
-    if crop_x1 < 0: 
-        crop_x1 = 0
-    elif crop_x1 + source_w > w:
-        crop_x1 = w - source_w
-        
-    if crop_y1 < 0:
-        crop_y1 = 0
-    elif crop_y1 + source_h > h:
-        crop_y1 = h - source_h
-        
-    crop_x2 = crop_x1 + source_w
-    crop_y2 = crop_y1 + source_h
-    
+    crop_x1 = max(0, min(crop_x1, w - source_w))
+    crop_y1 = max(0, min(crop_y1, h - source_h))
+
+    crop_x2 = int(crop_x1 + source_w)
+    crop_y2 = int(crop_y1 + source_h)
+
     # Crop
     cropped = frame[crop_y1:crop_y2, crop_x1:crop_x2]
-    
+
     # Resize to final target
     result = cv2.resize(cropped, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
-    
+
     return result
 
 if __name__ == "__main__":
