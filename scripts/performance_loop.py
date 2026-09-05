@@ -159,6 +159,22 @@ def _strength(value: float | None) -> str:
     return "negligible"
 
 
+def _best_hours(measured: list[dict[str, Any]], *, min_samples: int = 2,
+                top: int = 3) -> list[int]:
+    """Hours whose clips averaged the most views (needs min_samples each)."""
+    by_hour: dict[int, list[float]] = {}
+    for item in measured:
+        hour = item.get("features", {}).get("publish_hour")
+        views = item.get("metrics", {}).get("views")
+        if hour is None or views is None:
+            continue
+        by_hour.setdefault(int(hour), []).append(float(views))
+    scored = [(sum(v) / len(v), h) for h, v in by_hour.items()
+              if len(v) >= min_samples]
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    return [h for _mean, h in scored[:top]]
+
+
 def analyze(project_folder: str, fetch_live: bool = True) -> dict[str, Any]:
     """Build the performance-loop report. Never raises."""
     project_folder = os.path.abspath(os.fspath(project_folder))
@@ -197,6 +213,12 @@ def analyze(project_folder: str, fetch_live: bool = True) -> dict[str, Any]:
         value = _corr(pairs)
         correlations[feature] = {"vs_views": value, "strength": _strength(value)}
     report["correlations"] = correlations
+    best_hours = _best_hours(measured)
+    if best_hours:
+        report["best_hours"] = best_hours
+        report["insights"].append(
+            "Measured best publish hours (local time): {} — from {} measured clips.".format(
+                ", ".join(str(h) for h in best_hours), len(measured)))
 
     for feature, result in sorted(
             correlations.items(), key=lambda kv: -(abs(kv[1]["vs_views"] or 0))):

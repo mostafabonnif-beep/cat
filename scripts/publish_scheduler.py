@@ -36,14 +36,34 @@ from scripts import seo_titles  # noqa: E402
 PLAN_NAME = "publish_schedule.json"
 
 
+def load_measured_hours(project_folder: str | None) -> list[int]:
+    """Read performance_insights.json best_hours (empty when unavailable)."""
+    if not project_folder:
+        return []
+    path = os.path.join(os.path.abspath(os.fspath(project_folder)),
+                        "performance_insights.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    hours = data.get("best_hours") if isinstance(data, dict) else None
+    if not isinstance(hours, list):
+        return []
+    return sorted({int(h) % 24 for h in hours if isinstance(h, (int, float))})
+
+
 def build_plan(video_paths: list[str], *, platform: str = "youtube",
                start_at: str | None = None, slots_per_day: int = 1,
                days: int = 7, user_hours: list[int] | None = None,
-               timezone_offset_hours: float = 0.0) -> dict[str, Any]:
+               timezone_offset_hours: float = 0.0,
+               measured_hours: list[int] | None = None) -> dict[str, Any]:
     """Build an even publish plan for the given clips.
 
     Returns {"plan": [{video_path, publish_at, day, hour}], ...}. Slots are
-    generated inside best windows (or the user's explicit hours). When clips
+    generated inside best windows (or the user's explicit hours). When
+    measured_hours is given (from performance_insights.json), those win over
+    the generic platform windows. When clips
     exceed generated slots, the plan cycles through the window hours again
     on following days until every clip is placed.
     """
@@ -58,6 +78,10 @@ def build_plan(video_paths: list[str], *, platform: str = "youtube",
         weekday_hours = sorted({int(h) % 24 for h in user_hours})
         data = {"weekday": [(h, h + 1) for h in weekday_hours],
                 "weekend": [(h, h + 1) for h in weekday_hours]}
+    elif measured_hours:
+        measured = sorted({int(h) % 24 for h in measured_hours})
+        data = {"weekday": [(h, h + 1) for h in measured],
+                "weekend": [(h, h + 1) for h in measured]}
 
     start = dt.datetime.now(dt.timezone.utc)
     if start_at:
@@ -208,9 +232,12 @@ def main(argv=None) -> int:
         print("provide --videos or --plan")
         return 2
 
+    measured = load_measured_hours(args.project) if not args.user_hours else []
+    if measured:
+        print("[scheduler] using measured best hours from insights: {}".format(measured))
     plan = build_plan(args.videos, platform=args.platform,
                       start_at=args.start_at, days=args.days,
-                      user_hours=args.user_hours)
+                      user_hours=args.user_hours, measured_hours=measured)
     if args.project:
         path = save_plan(plan, args.project)
         print("[scheduler] plan saved: {}".format(path))
