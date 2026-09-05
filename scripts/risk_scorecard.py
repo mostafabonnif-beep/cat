@@ -520,6 +520,12 @@ def analyze_project(project_folder, viral_segments=None, gate_threshold=HIGH_REU
         except Exception:
             pass
 
+    try:
+        from scripts import review_queue
+        review_queue.build_queue(project_folder)
+    except Exception as exc:
+        print("[risk] review queue skipped: {}".format(exc))
+
     # console summary
     print(i18n("[risk] Scorecard: {} total — {} low / {} medium / {} high / {} danger — {} blocked for publish").format(
         summary["total"], summary["low"], summary["medium"], summary["high"],
