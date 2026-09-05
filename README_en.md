@@ -38,7 +38,7 @@ Forget expensive subscriptions and minute limits. OUSSAMA Cutter offers unlimite
 ## Key Features 🚀
 
 -   🤖 **AI Viral Cut**: Automatically identifies hooks and engaging moments using **Gemini**, **GPT-4**, or **Local LLMs (Llama 3, DeepSeek, etc)**.
--   🛡️ **Anti-Strike Safety Filter (New!)**: Blocks clips containing **hate speech / incitement to violence** before cutting — or just **bleeps the violating words** (mute audio + mask subtitles) keeping the clip. Extra contextual AI review (Gemini/G4F). 100% local, multilingual (Arabic + dialects, EN, PT, FR, ES, TR), with a per-project `safety_report.json`.
+-   🛡️ **Anti-Strike Safety Filter (New!)**: Blocks clips containing **hate speech / incitement to violence** before cutting — or just **bleeps the violating words** (mute audio + mask subtitles) keeping the clip. Extra contextual review via Gemini/G4F or optional OpenAI Moderation. The core lexical and semantic checks run locally; cloud review sends only title/transcript when selected. Multilingual (Arabic + dialects, EN, PT, FR, ES, TR), with a per-project `safety_report.json`.
 -   🗣️ **Resilient Transcription**: **WhisperX** remains the primary path, with optional local `faster-whisper` fallback when Torch/WhisperX is unavailable.
 -   🔊 **Audio QC**: Measures loudness, true peak, and silence in rendered clips with FFmpeg, writes `audio_qc_report.json`, and blocks real publishing when review is required.
 -   🎨 **Dynamic Captions**: "Hormozi" style with word-by-word highlights, vibrant colors, emojis, and full customization.

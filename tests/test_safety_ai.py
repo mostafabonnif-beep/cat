@@ -63,6 +63,7 @@ class TestGating:
     def test_should_run(self):
         assert safety_ai.should_run_ai_review("gemini", "on")
         assert safety_ai.should_run_ai_review("g4f", "on")
+        assert safety_ai.should_run_ai_review("openai-moderation", "on")
         assert not safety_ai.should_run_ai_review("local", "on")
         assert not safety_ai.should_run_ai_review("manual", "on")
         assert not safety_ai.should_run_ai_review("gemini", "off")

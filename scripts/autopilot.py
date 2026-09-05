@@ -57,10 +57,11 @@ def check_readiness(args: Any, ai_backend: str, api_key: str | None = None) -> d
             issues.append({"code": "missing_visual_model", "detail": "A local ONNX visual safety model is required when visual safety is strict."})
 
     backend = str(ai_backend or "").lower()
-    if backend not in {"gemini", "g4f"}:
-        issues.append({"code": "missing_ai_backend", "detail": "Autopilot requires Gemini or G4F for contextual policy review."})
-    if backend == "gemini" and not str(api_key or "").strip():
-        issues.append({"code": "missing_ai_key", "detail": "Gemini API key is missing."})
+    if backend not in {"gemini", "g4f", "openai-moderation"}:
+        issues.append({"code": "missing_ai_backend", "detail": "Autopilot requires Gemini, G4F, or OpenAI moderation for contextual policy review."})
+    if backend in {"gemini", "openai-moderation"} and not str(api_key or "").strip():
+        label = "Gemini" if backend == "gemini" else "OpenAI moderation"
+        issues.append({"code": "missing_ai_key", "detail": "{} API key is missing.".format(label)})
     if not binaries["fpcalc"]:
         warnings.append({"code": "missing_fpcalc", "detail": "Music fingerprinting will remain unavailable until fpcalc is installed."})
 

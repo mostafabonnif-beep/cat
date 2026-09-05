@@ -433,7 +433,7 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
                 print(i18n("AI safety review failed; fail-closed policy refuses to continue."))
                 sys.exit(1)
     elif args.safety_ai == "on" and args.safety_mode != "off":
-        debug(f"AI safety review skipped for backend '{ai_backend}' (needs gemini/g4f).")
+        debug(f"AI safety review skipped for backend '{ai_backend}' (needs gemini/g4f/openai-moderation).")
 
     if args.safety_mode in ("block", "censor") and not viral_segments.get("segments"):
         print(i18n("Error: All segments were blocked by the safety filter (hate speech / policy violations)."))
@@ -512,8 +512,8 @@ def main():
     parser.add_argument("--model", default="large-v3-turbo", help="Whisper model to use")
     parser.add_argument("--transcription-device", choices=["auto", "cpu", "cuda"], default="auto", help="WhisperX device: auto, cpu, or cuda")
     
-    parser.add_argument("--ai-backend", choices=["manual", "gemini", "g4f", "local"], help="AI backend for viral analysis")
-    parser.add_argument("--api-key", help="Gemini API Key (required if ai-backend is gemini)")
+    parser.add_argument("--ai-backend", choices=["manual", "gemini", "g4f", "openai-moderation", "local"], help="AI backend for viral analysis")
+    parser.add_argument("--api-key", help="API key for the selected backend; OPENAI_API_KEY is used for openai-moderation")
     
     parser.add_argument("--chunk-size", help="Override Chunk Size")
     parser.add_argument("--ai-model-name", help="Override AI Model Name")
@@ -561,7 +561,7 @@ def main():
                         help="Minimum severity that blocks a segment in 'block' mode (default: medium)")
     parser.add_argument("--safety-extra-terms", help="Path to a safety_terms.json file with extra blocked terms")
     parser.add_argument("--safety-ai", choices=["on", "off"], default="on",
-                        help="Second-pass AI policy review of surviving segments (context-level violations keywords can't catch). Only used with gemini/g4f backends. Default: on")
+                        help="Second-pass policy review of surviving segments. Supports Gemini, G4F, and openai-moderation. Default: on")
     parser.add_argument("--autopilot", action="store_true",
                         help="Run the end-to-end safety autopilot: AI review, OCR, visual checks, provenance, audio QC, metadata, and hard publish gates.")
     parser.add_argument("--safety-fail-closed", choices=["on", "off"], default="on",
@@ -1028,6 +1028,10 @@ def main():
                     ai_backend = "manual"
 
         api_key = args.api_key
+        if ai_backend == "openai-moderation" and not api_key:
+            api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("OPENAI_MODERATION_API_KEY", "").strip()
+            if not api_key and not args.skip_prompts:
+                print(i18n("OpenAI moderation key not found; set OPENAI_API_KEY or use --api-key."))
         env_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if ai_backend == "gemini" and not api_key and env_api_key:
             api_key = env_api_key
@@ -1050,11 +1054,13 @@ def main():
             ai_backend = api_config.get("selected_api") or ("gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "manual")
         if ai_backend == "gemini" and not api_key:
             api_key = os.getenv("GEMINI_API_KEY", "").strip() or api_config.get("gemini", {}).get("api_key", "")
-        if ai_backend not in {"gemini", "g4f"}:
-            print("[autopilot] A Gemini or G4F AI backend is required; manual/local mode cannot provide the context safety review.")
+        if ai_backend == "openai-moderation" and not api_key:
+            api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("OPENAI_MODERATION_API_KEY", "").strip()
+        if ai_backend not in {"gemini", "g4f", "openai-moderation"}:
+            print("[autopilot] Gemini, G4F, or OpenAI moderation is required for contextual policy review.")
             return 1
-        if ai_backend == "gemini" and not api_key:
-            print("[autopilot] Gemini was selected but no API key is configured.")
+        if ai_backend in {"gemini", "openai-moderation"} and not api_key:
+            print("[autopilot] The selected AI safety backend has no API key configured.")
             return 1
 
     if args.autopilot:

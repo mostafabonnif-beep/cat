@@ -37,7 +37,7 @@ download (yt-dlp) → transcribe (WhisperX) → اختيار المقاطع ال
 | الملف | الدور |
 |---|---|
 | `scripts/censor_engine.py` | **الكتم**: توقيت الكلمة من `input.json` (بمستوى الكلمة) → كتم الصوت بـ ffmpeg `volume=0:enable='between(t,a,b)'` + إخفاء الكلمة `████` في ترجمات `subs/*.json` → `censor_map.json`. المقطع يبقى! |
-| `scripts/safety_ai.py` | **مراجعة سياقية** بـ Gemini/G4F للمقاطع الناجية (`--safety-ai on` افتراضي). تمسك الكراهية بدون كلمات محظورة. لا تكسر المعالجة عند الفشل. |
+| `scripts/safety_ai.py` | **مراجعة سياقية** بـ Gemini/G4F أو OpenAI Moderation للمقاطع الناجية (`--safety-ai on` افتراضي). تمسك الكراهية بدون كلمات محظورة؛ OpenAI يرسل العنوان والنص فقط ويفشل مغلقاً عند تعطل الخدمة. |
 | `safety_filter.py` | وضع `censor` + `allow_terms` (استثناء الحظر الخاطئ) |
 | `webui/segments_review.py` | عمود "الأمان" في تبويب المراجعة (✅/⚠️/🔇/🤖⚠️) |
 
@@ -64,7 +64,7 @@ download (yt-dlp) → transcribe (WhisperX) → اختيار المقاطع ال
 main_improved.py
 ├─ 3.7  safety_filter.apply_safety_filter(...)      ← فلتر كلمات + censor/flag/block
 │        (يستورد load_remote_terms() من كاش التحديث التلقائي)
-├─ 3.8  safety_ai.review_segments(...)              ← مراجعة Gemini/G4F (فقط gemini/g4f)
+├─ 3.8  safety_ai.review_segments(...)              ← مراجعة Gemini/G4F/OpenAI Moderation
 │        (المخالفات السياقية تُدمج في safety_report.json)
 ├─ 4    cut_segments.cut(...)                       ← cuts/*_original_scale.mp4 + subs/*_processed.json
 ├─ 4.5  censor_engine.censor_project(...)           ← لو safety_mode == "censor": كتم + إخفاء
