@@ -76,6 +76,13 @@ def build_queue(project_folder: str, *, write_html: bool = True) -> dict[str, An
             if isinstance(entry, dict):
                 _add(queue, entry.get("index"), "audio QC requires review", "high" if audio.get("status") == "block" else "medium", "audio_qc", "audio_qc_report.json")
 
+    try:
+        from scripts import review_decisions
+        decisions = {int(item["clip_index"]): item["decision"]
+                     for item in review_decisions.load_decisions(project_folder)
+                     if item.get("clip_index") is not None}
+    except Exception:
+        decisions = {}
     segments = {entry.get("index"): entry for entry in scorecard.get("segments", []) if isinstance(entry, dict)}
     clips = []
     for index, item in sorted(queue.items(), key=lambda pair: (-({"high": 2, "medium": 1, "low": 0}.get(pair[1].get("severity"), 0)), pair[0])):
@@ -83,7 +90,9 @@ def build_queue(project_folder: str, *, write_html: bool = True) -> dict[str, An
         item["title"] = segment.get("title", "")
         item["start_time"] = segment.get("start_time")
         item["end_time"] = segment.get("end_time")
-        item["next_action"] = "manual_review_before_publish"
+        prior = decisions.get(index)
+        item["prior_decision"] = prior
+        item["next_action"] = prior if prior in {"approve", "reject", "edit", "mute"} else "manual_review_before_publish"
         clips.append(item)
     report = {"generated_at": _now(), "project": os.path.abspath(project_folder), "total": len(clips), "high": sum(item.get("severity") == "high" for item in clips), "clips": clips}
     path = os.path.join(project_folder, QUEUE_FILENAME)
@@ -94,13 +103,17 @@ def build_queue(project_folder: str, *, write_html: bool = True) -> dict[str, An
     if write_html:
         rows = []
         for item in clips:
-            rows.append("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(item["index"], html.escape(str(item.get("title", ""))), html.escape(str(item.get("severity", ""))), html.escape("; ".join(item.get("reasons", []))), html.escape(", ".join(item.get("sources", [])))))
+            prior = item.get("prior_decision")
+            rows.append("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                item["index"], html.escape(str(item.get("title", ""))), html.escape(str(item.get("severity", ""))),
+                html.escape("; ".join(item.get("reasons", []))), html.escape(", ".join(item.get("sources", []))),
+                html.escape(str(prior or "—"))))
         document = ("<!doctype html><meta charset='utf-8'><title>Review Queue</title>"
                     "<style>body{font-family:system-ui;max-width:1100px;margin:2rem auto}"
                     "table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.6rem;text-align:left}</style>"
                     "<h1>Automated Review Queue</h1><p>" + str(len(clips)) +
                     " clip(s) require review before publishing.</p><table><tr>"
-                    "<th>#</th><th>Title</th><th>Severity</th><th>Reasons</th><th>Sources</th></tr>"
+                    "<th>#</th><th>Title</th><th>Severity</th><th>Reasons</th><th>Sources</th><th>Decision</th></tr>"
                     + "".join(rows) + "</table>")
         with open(os.path.join(project_folder, HTML_FILENAME), "w", encoding="utf-8") as handle:
             handle.write(document)
