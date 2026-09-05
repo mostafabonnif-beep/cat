@@ -501,7 +501,14 @@ def run_content_guard_stage(viral_segments, *, project_folder, workflow_choice):
             debug("Could not update content guard manifest: {}".format(exc))
         blocked = report.get("blocked", 0)
         if blocked:
-            print("[content-guard] ⛔ {} candidate(s) already published or exceeded the source rate limit; removed before cutting.".format(blocked))
+            blocked_codes = sorted({
+                reason.get("code", "policy_guard")
+                for entry in report.get("blocked_segments", [])
+                for reason in entry.get("reasons", [])
+            })
+            reason_summary = ", ".join(blocked_codes) or "policy_guard"
+            print("[content-guard] ⛔ {} candidate(s) blocked before cutting: {}".format(
+                blocked, reason_summary))
             for entry in report.get("blocked_segments", [])[:10]:
                 reasons = entry.get("reasons", [])
                 detail = reasons[0].get("detail", "محتوى مكرر") if reasons else "محتوى مكرر"
