@@ -8,5 +8,5 @@
 # NVIDIA GPU: install the CUDA 12/cuDNN 9 runtime required by the selected
 # CTranslate2 version first, then install this file. If GPU libraries are not
 # available, the backend automatically uses CPU when device=auto.
-faster-whisper>=1.2,<2
+faster-whisper>=1.2.1,<2
 numpy<2
