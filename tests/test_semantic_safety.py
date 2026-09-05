@@ -24,6 +24,11 @@ def test_identity_reference_alone_is_allowed():
     verdict = semantic_safety.analyze_text("سعودي يشرح وصفة طبخ")
     assert verdict["action"] == "allow"
 
+def test_animal_description_is_not_hate_speech():
+    verdict = semantic_safety.analyze_text("القنفذ حيوان أليف ومفيد للغاية")
+    assert verdict["action"] == "allow"
+    assert verdict["category"] is None
+
 
 def test_identity_plus_dehumanization_is_blocked():
     verdict = semantic_safety.analyze_text("السعوديين حشرات ويجب طردهم")

@@ -80,6 +80,13 @@ class TestMatching:
         matches = sf.find_matches("قال تعالى عن الكفار", min_severity="high")
         assert matches == []
 
+    def test_animal_description_does_not_block_a_segment(self):
+        segments = [{"title": "القنفذ", "start_time": 0, "end_time": 5}]
+        transcript = [{"start": 0, "end": 5, "text": "القنفذ حيوان أليف ومفيد"}]
+        kept, report = sf.analyze_segments(segments, transcript, mode="block")
+        assert len(kept) == 1
+        assert report["blocked"] == 0
+
     def test_identity_reference_is_context_only(self):
         matches = sf.find_matches("هذا فيديو عن سعودي يعيش في دبي")
         assert matches
@@ -88,9 +95,10 @@ class TestMatching:
         assert sf.find_matches("هذا فيديو عن سعودي يعيش في دبي", min_severity="medium") == []
 
     def test_identity_plus_hate_is_detected(self):
-        matches = sf.find_matches("السعوديين حشرات يجب طردهم")
-        categories = {m["category"] for m in matches}
-        assert "hate_dehumanize" in categories or "hate_exclusion" in categories
+        from scripts.semantic_safety import analyze_text
+        verdict = analyze_text("السعوديين حشرات يجب طردهم")
+        assert verdict["action"] == "block"
+        assert verdict["category"] == "hate_or_dehumanization"
 
     def test_identity_reference_does_not_block_clean_segment(self):
         segments = [{"title": "وصفة", "start_time": 0, "end_time": 5}]

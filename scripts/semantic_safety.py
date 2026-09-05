@@ -33,7 +33,7 @@ _VIOLENT_VERBS = (
 )
 
 _EXCLUSION_VERBS = (
-    r"(?:لا مكان ل|لا يستحق(?:ون)? الحياة|ما يستاهل(?:وش)? الحياة|يجب طرد|"
+    r"(?:لا مكان ل|لا يستحق(?:ون)? (?:الحياة|العيش|حياة|عيش)|ما يستاهل(?:وش)? الحياة|يجب طرد|"
     r"اطردوا|اخرجوا|لا نريدهم|ما نحبهمش|تخلصوا من|احرموا|منعوا|"
     r"inferior|subhuman|should not exist|do not belong|send them away|remove them)"
 )
@@ -112,7 +112,7 @@ def analyze_text(text: str) -> Dict[str, Any]:
             "explanation": "collective target combined with exclusion or dehumanization",
             "recommendation": _recommendation("block", "hate_or_dehumanization"),
         }
-    if (has_violence and has_exclusion) or (has_group and counter and (has_violence or has_dehumanizing or "قتل" in normalized)):
+    if (has_violence and has_exclusion) or (has_dehumanizing and has_exclusion) or (has_group and counter and (has_violence or has_dehumanizing or "قتل" in normalized)):
         return {
             "action": "review",
             "confidence": 0.72,
@@ -121,7 +121,7 @@ def analyze_text(text: str) -> Dict[str, Any]:
             "explanation": "high-risk terms require human/contextual review",
             "recommendation": _recommendation("review", "context_required"),
         }
-    if has_dehumanizing or has_exclusion or has_violence:
+    if has_exclusion or has_violence:
         return {
             "action": "review",
             "confidence": 0.62,
@@ -129,6 +129,15 @@ def analyze_text(text: str) -> Dict[str, Any]:
             "signals": signals,
             "explanation": "potentially harmful language without a clear target/context",
             "recommendation": _recommendation("review", "harassment_or_threat_context"),
+        }
+    if has_dehumanizing:
+        return {
+            "action": "allow",
+            "confidence": 0.18,
+            "category": None,
+            "signals": signals,
+            "explanation": "animal or degrading term without a protected-group target",
+            "recommendation": _recommendation("allow", None),
         }
     return {
         "action": "allow",

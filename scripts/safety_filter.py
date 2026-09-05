@@ -395,7 +395,9 @@ CONTEXT_ONLY_TERMS = {
     "كويتي", "لاجئ", "لاجئين", "مسيحي", "مسيحيين", "مسلم", "مسلمين",
     "ملحد", "ملحدين", "مهاجر", "مهاجرين", "مثليين", "مثليات", "يهودي",
     "يهود", "نصراني", "نصارى", "شيعي", "شيعة", "سني", "سنة", "نساء",
-    "رجال", "معاقين", "ذوي اعاقه", "غجر", "black people", "white people",
+    "رجال", "معاقين", "ذوي اعاقه", "غجر", "حيوان", "حيوانات", "قرد", "قردة",
+    "قرود", "خنزير", "خنازير", "حشرات", "صراصير", "جرذان", "كلب", "كلاب",
+    "black people", "white people",
     "jews", "muslims", "christians", "immigrants", "refugees", "foreigners",
     "women", "men", "gay people", "disabled people",
 }
@@ -505,6 +507,24 @@ def _build_index(extra_terms=None):
 # Matching
 # ---------------------------------------------------------------------------
 
+def _context_is_harmful(text):
+    try:
+        from scripts.semantic_safety import analyze_text
+        semantic = analyze_text(text)
+        if semantic.get("action") in {"block", "review"}:
+            return True
+        if "dehumanizing_comparison" not in semantic.get("signals", []):
+            return False
+        normalized = normalize_text(text)
+        dehumanizing_terms = {
+            normalize_text(term) for term in
+            ("قرد", "قردة", "قرود", "خنزير", "خنازير", "حشرات", "صراصير", "جرذان", "كلب", "كلاب")
+        }
+        return sum(1 for term in dehumanizing_terms if f" {term} " in f" {normalized} ") >= 2
+    except Exception:
+        return True
+
+
 def find_matches(text, index=None, min_severity="low", allow_terms=None):
     """Return all blocklist matches found in *text* (already raw text).
 
@@ -530,8 +550,11 @@ def find_matches(text, index=None, min_severity="low", allow_terms=None):
         joined += " " + " ".join(variant_tokens) + " "
     matches = []
     min_rank = SEVERITY_ORDER.get(min_severity, 1)
+    context_is_harmful = _context_is_harmful(text)
     for entry in index:
-        effective_severity = "low" if entry.get("context_only") else entry["severity"]
+        effective_severity = entry["severity"]
+        if entry.get("context_only") and not context_is_harmful:
+            effective_severity = "low"
         if SEVERITY_ORDER.get(effective_severity, 3) < min_rank:
             continue
         if entry["norm"] in allow_norms:
@@ -545,7 +568,10 @@ def find_matches(text, index=None, min_severity="low", allow_terms=None):
                 "term": entry["term"],
                 "lang": entry["lang"],
                 "severity": effective_severity,
-                "category": "context_only_identity" if entry.get("context_only") else entry["category"],
+                "category": entry["category"] if context_is_harmful else (
+                    "context_only_identity" if entry.get("context_only") else entry["category"]
+                ),
+                "context_only": bool(entry.get("context_only")),
                 "word_index": max(0, approx_word - 1),
             })
     return matches
@@ -757,11 +783,12 @@ def analyze_segments(segments, transcript_segments=None, project_folder=None,
 
     for segment_index, seg in enumerate(segments):
         text = segment_text(seg, transcript_segments)
+        semantic = semantic_safety.analyze_text(text)
         matches = find_matches(text, index=index, min_severity="low",
                                allow_terms=allow_terms)
         blocking = [m for m in matches
-                    if SEVERITY_ORDER.get(m["severity"], 3) >= block_threshold]
-        semantic = semantic_safety.analyze_text(text)
+                    if SEVERITY_ORDER.get(m["severity"], 3) >= block_threshold
+                    and not (m.get("context_only") and m.get("severity") == "low" and semantic.get("action") == "allow")]
         if semantic.get("action") == "block":
             blocking.append({
                 "term": "semantic policy pattern",

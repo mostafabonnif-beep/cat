@@ -32,6 +32,7 @@ import subprocess
 from scripts.safety_filter import (
     SEVERITY_ORDER,
     _build_index,
+    _context_is_harmful,
     load_custom_terms,
     load_remote_terms,
     normalize_text,
@@ -84,7 +85,7 @@ def load_word_transcript(project_folder):
 # Span computation
 # ---------------------------------------------------------------------------
 
-def _word_matches_blocklist(norm_words, index, min_rank, allow_norms):
+def _word_matches_blocklist(norm_words, index, min_rank, allow_norms, include_context_only=False):
     """Yield (word_start_idx, word_end_idx, entry) for each blocklist hit.
 
     ``norm_words`` is the list of normalized word strings. Multi-token
@@ -92,7 +93,7 @@ def _word_matches_blocklist(norm_words, index, min_rank, allow_norms):
     """
     n = len(norm_words)
     for entry in index:
-        if entry.get("context_only"):
+        if entry.get("context_only") and not include_context_only:
             continue
         if SEVERITY_ORDER.get(entry["severity"], 3) < min_rank:
             continue
@@ -128,9 +129,16 @@ def compute_censor_spans(segment, words, index=None, min_severity="medium",
         return []
 
     norm_words = [normalize_text(w["word"]).replace(" ", "") for w in window]
+    include_context_only = False
+    try:
+        include_context_only = _context_is_harmful(" ".join(w["word"] for w in window))
+    except Exception:
+        include_context_only = False
 
     spans = []
-    for i, j, entry in _word_matches_blocklist(norm_words, index, min_rank, allow_norms):
+    for i, j, entry in _word_matches_blocklist(
+            norm_words, index, min_rank, allow_norms,
+            include_context_only=include_context_only):
         start = max(seg_start, window[i]["start"] - pad)
         end = min(seg_end, window[j]["end"] + pad)
         if end <= start:
