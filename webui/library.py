@@ -245,7 +245,26 @@ def generate_project_gallery(project_path_name, is_full_path=False):
                          counts.get("blocked", 0), counts.get("manual_review", 0), report_link)
             except Exception:
                 report_banner = ""
-        html_cards = state_banner + report_banner
+        review_banner = ""
+        review_path = os.path.join(project_folder_path, "review_queue.json")
+        review_html_path = os.path.join(project_folder_path, "review_queue.html")
+        if os.path.exists(review_path):
+            try:
+                with open(review_path, "r", encoding="utf-8") as review_file:
+                    review_queue = json.load(review_file)
+                total = int(review_queue.get("total", 0) or 0)
+                high = int(review_queue.get("high", 0) or 0)
+                review_url = ""
+                if os.path.exists(review_html_path):
+                    rel_review = os.path.relpath(review_html_path, VIRALS_DIR).replace("\\", "/")
+                    review_url = "/virals/" + urllib.parse.quote(rel_review, safe="/")
+                review_link = ('<a href="{}" target="_blank" style="color:#fbbf24;margin-right:12px;">فتح طابور المراجعة</a>'.format(review_url) if review_url else "")
+                if total:
+                    review_banner = ('<div style="margin:10px 0;padding:10px 14px;border:1px solid #f59e0b;border-radius:10px;background:rgba(245,158,11,.08);color:#fde68a;">'
+                                     '<strong>مراجعة قبل النشر: {}</strong> <span style="color:#fef3c7;">منها {} عالية الخطورة</span>{}</div>').format(total, high, review_link)
+            except Exception:
+                review_banner = ""
+        html_cards = state_banner + report_banner + review_banner
         
         for i, seg in enumerate(segments_list):
             title = seg.get("title", f"{i18n('Segment')} {i+1}")
