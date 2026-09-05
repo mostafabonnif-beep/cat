@@ -416,6 +416,14 @@ def order_faces_for_crop(faces, *, focus_active_speaker, selector=None, frame_in
     faces = list(faces or [])
     if not focus_active_speaker or len(faces) < 2 or selector is None:
         return faces, False
+    if any(face.get("_track_id") is not None for face in faces):
+        faces = sorted(
+            faces,
+            key=lambda face: (
+                face.get("_track_id") is None,
+                face.get("_track_id") if face.get("_track_id") is not None else 0,
+            ),
+        )
     return selector.reorder(faces, frame_index=frame_index)
 
 
@@ -718,7 +726,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     smoothed_slots = 0  # how many face slots were smoothed last frame (v7.27)
     # Identity tracker (v7.28): keeps per-face IDs across detection cycles so
     # crop slots never swap people after a brief disappearance / gap.
-    face_tracker = FaceTracker(match_gate=0.75, max_missing_cycles=4,
+    face_tracker = FaceTracker(match_gate=0.45, max_missing_cycles=6,
                                velocity_alpha=0.4)
     # Auto-mode face-count grace (v7.27): a 2-face layout survives brief
     # detection blips (2 quick re-detect cycles ~0.2s apart) instead of
@@ -732,7 +740,10 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
         switch_margin=active_speaker_score_diff,
         hold_frames=max(1, int(round(fps * 0.25))),
         max_jump=200.0,
+        lost_grace_frames=max(2, int(round(fps * 0.15))),
     )
+    speaker_switch_count = 0
+    speaker_switch_frames = []
 
     # Current state of face mode (1..4). Auto keeps the legacy 1/2 behavior.
     current_num_faces_state = 1
@@ -984,6 +995,8 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                     faces, focus_active_speaker=True,
                     selector=active_speaker_selector, frame_index=frame_index)
                 if speaker_switched:
+                    speaker_switch_count += 1
+                    speaker_switch_frames.append(frame_index)
                     print(f"DEBUG: Active speaker switched at frame {frame_index}")
             
             # v7.27: auto-mode count-down grace (see face_count_hold).
@@ -1174,7 +1187,11 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                         )
                     f1 = pair[0]['bbox']
                     f2 = pair[1]['bbox']
-                    if last_detected_faces is not None and len(last_detected_faces) == 2:
+                    if focus_active_speaker:
+                        # The active-speaker selector has already chosen slot 0.
+                        # Proximity sorting here would silently undo that choice.
+                        detections = [f1, f2]
+                    elif last_detected_faces is not None and len(last_detected_faces) == 2:
                         detections = sort_by_proximity([f1, f2], last_detected_faces, get_center_bbox)
                     else:
                         detections = [f1, f2]
@@ -1390,6 +1407,9 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     cap.release()
     out.release()
     
+    if focus_active_speaker:
+        print(f"Active speaker tracking switches: {speaker_switch_count}")
+
     # Compress timeline into segments
     # [(start_time, end_time, mode), ...]
     compressed_timeline = []
