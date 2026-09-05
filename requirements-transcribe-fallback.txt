@@ -9,4 +9,4 @@
 # CTranslate2 version first, then install this file. If GPU libraries are not
 # available, the backend automatically uses CPU when device=auto.
 faster-whisper>=1.2,<2
-numpy<2
+numpy<3

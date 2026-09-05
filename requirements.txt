@@ -1,5 +1,5 @@
 # Outras dependencias essenciais
-numpy<2  # whisperx/pyannote break on NumPy 2.x (np.NaN removed)
+numpy<3  # whisperx/pyannote break on NumPy 2.x (np.NaN removed)
 g4f
 yt-dlp[default]
 ffmpeg-python
