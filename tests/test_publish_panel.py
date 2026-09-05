@@ -125,17 +125,14 @@ class TestTranslate:
         assert ok is False
 
     def test_translates_and_writes(self, tmp_path, monkeypatch):
-        # translate_json has heavy module-level deps (tqdm/deep_translator) —
-        # stub them so the import succeeds, then patch the function itself.
+        # translate_json uses the built-in requests adapter; patch the module
+        # function itself so the panel test remains fully offline.
         import types
         tqdm_mod = types.ModuleType("tqdm")
         tqdm_asyncio = types.ModuleType("tqdm.asyncio")
         tqdm_asyncio.tqdm_asyncio = None
-        deep_tr = types.ModuleType("deep_translator")
-        deep_tr.GoogleTranslator = type("GoogleTranslator", (), {})
         monkeypatch.setitem(sys.modules, "tqdm", tqdm_mod)
         monkeypatch.setitem(sys.modules, "tqdm.asyncio", tqdm_asyncio)
-        monkeypatch.setitem(sys.modules, "deep_translator", deep_tr)
 
         project = _project(tmp_path)
         clip = os.path.join(project, "final", "000_clip.mp4")

@@ -3,8 +3,45 @@ import json
 import os
 from pathlib import Path
 
+import requests
 import tqdm.asyncio
-from deep_translator import GoogleTranslator
+
+
+class GoogleTranslator:
+    """Small requests-based adapter for Google's public translation endpoint."""
+
+    endpoint = "https://translate.googleapis.com/translate_a/single"
+
+    def __init__(self, source="auto", target="en", timeout=30):
+        self.source = source or "auto"
+        self.target = target
+        self.timeout = timeout
+
+    def translate(self, text):
+        response = requests.get(
+            self.endpoint,
+            params={
+                "client": "gtx",
+                "sl": self.source,
+                "tl": self.target,
+                "dt": "t",
+                "q": text,
+            },
+            headers={"User-Agent": "OUSSAMA-Cutter/7.26"},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list) or not payload or not isinstance(payload[0], list):
+            raise ValueError("translation service returned an invalid response")
+        translated = "".join(
+            str(part[0])
+            for part in payload[0]
+            if isinstance(part, list) and part and part[0]
+        )
+        if not translated.strip():
+            raise ValueError("translation service returned empty text")
+        return translated
 
 RTL_LANGS = {"ar", "he", "fa", "ur"}
 
@@ -144,50 +181,55 @@ def unjoin_sentences(original_sentence: str, modified_sentence: str, separator: 
     return new_modified_texts or original_texts or ' '
 
 def adjust_segments(segments):
-    for i in range(len(segments)):
-        current_segment = segments[i]
+    for i, current_segment in enumerate(segments):
         next_segment = segments[i + 1] if i < len(segments) - 1 else None
-        
-        # Divide o texto em palavras
-        text_words = current_segment['text'].split()
-        
-        # Ajusta as palavras do segmento atual
-        current_segment['words'] = [
+
+        text_words = str(current_segment.get("text") or "").split()
+        if not text_words:
+            current_segment["words"] = []
+            continue
+
+        start = float(current_segment.get("start", 0))
+        end = float(current_segment.get("end", start))
+        duration = max(0, end - start)
+        current_segment["words"] = [
             {
-                'word': word,
-                'start': current_segment['start'] + (idx * (current_segment['end'] - current_segment['start']) / len(text_words)),
-                'end': current_segment['start'] + ((idx + 1) * (current_segment['end'] - current_segment['start']) / len(text_words)),
-                'score': 1.0  # Mantemos o score como 1.0 já que não temos informações precisas
+                "word": word,
+                "start": start + (idx * duration / len(text_words)),
+                "end": start + ((idx + 1) * duration / len(text_words)),
+                "score": 1.0,
             }
             for idx, word in enumerate(text_words)
         ]
-        
-        # Ajusta o fim da última palavra do segmento atual
-        if current_segment['words']:
-            last_word = current_segment['words'][-1]
-            if next_segment:
-                # Estende até o início do próximo segmento ou até 2 segundos, o que ocorrer primeiro
-                extended_end = min(next_segment['start'], last_word['start'] + 2)
-            else:
-                # Se for o último segmento, estende por até 2 segundos
-                extended_end = min(current_segment['end'] + 2, last_word['start'] + 2)
-            
-            last_word['end'] = extended_end
-            current_segment['end'] = extended_end
-        
-        # Ajusta o início do próximo segmento se necessário
-        if next_segment and next_segment['words']:
-            next_segment['words'][0]['start'] = next_segment['start']
-    
+
+        last_word = current_segment["words"][-1]
+        if next_segment:
+            next_start = float(next_segment.get("start", last_word["start"]))
+            extended_end = min(next_start, last_word["start"] + 2)
+        else:
+            extended_end = min(end + 2, last_word["start"] + 2)
+        last_word["end"] = max(last_word["start"], extended_end)
+        current_segment["end"] = last_word["end"]
+
+        if next_segment and next_segment.get("words"):
+            next_segment["words"][0]["start"] = next_segment.get("start", 0)
+
     return segments
 
 async def translate_json_file(json_file_path: Path, translated_json_path: Path, target_lang):
     with open(json_file_path, 'r', encoding='utf-8') as file:
         data = json.load(file)
 
-    segments = data['segments']
-    texts_to_translate = [segment['text'] for segment in segments if segment['text']]
-    words_to_translate = [word['word'] for segment in segments for word in segment['words']]
+    segments = data.get('segments') or []
+    if not isinstance(segments, list):
+        raise ValueError("subtitle JSON must contain a segments list")
+    texts_to_translate = [segment.get('text', '') for segment in segments if segment.get('text')]
+    words_to_translate = [
+        word.get('word', '')
+        for segment in segments
+        for word in (segment.get('words') or [])
+        if isinstance(word, dict)
+    ]
 
     all_texts = texts_to_translate + words_to_translate
     chunks = join_sentences(all_texts, chunk_max_chars)
@@ -227,10 +269,13 @@ async def translate_json_file(json_file_path: Path, translated_json_path: Path, 
     word_index = 0
     text_index = 0
     for segment in segments:
-        if segment['text']:
-            segment['text'] = translated_texts[text_index] if text_index < len(translated_texts) else segment['text']
+        text = segment.get('text') or ''
+        if text:
+            segment['text'] = translated_texts[text_index] if text_index < len(translated_texts) else text
             text_index += 1
-        for word in segment['words']:
+        for word in segment.get('words') or []:
+            if not isinstance(word, dict) or not word.get('word'):
+                continue
             if word_index < len(translated_words):
                 word['word'] = translated_words[word_index]
                 word_index += 1

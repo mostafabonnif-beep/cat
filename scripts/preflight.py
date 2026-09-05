@@ -89,7 +89,6 @@ DIST_TO_MODULE = {
     "psutil": "psutil",
     "fastapi": "fastapi",
     "uvicorn": "uvicorn",
-    "deep-translator": "deep_translator",
     "tqdm": "tqdm",
     "onnxruntime": "onnxruntime",
     "cryptography": "cryptography",

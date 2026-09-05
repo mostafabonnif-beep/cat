@@ -1,6 +1,6 @@
 # Outras dependencias essenciais
 numpy<2  # whisperx/pyannote break on NumPy 2.x (np.NaN removed)
-g4f[all]
+g4f
 yt-dlp[default]
 ffmpeg-python
 mediapipe
@@ -12,7 +12,6 @@ opencv-python
 psutil
 fastapi
 uvicorn
-deep-translator
 tqdm
 requests>=2.31,<3
 

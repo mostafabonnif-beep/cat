@@ -165,7 +165,7 @@ def clip_suggestion(project_path, video_path):
 # ---------------------------------------------------------------------------
 
 def translate_clip(project_path, video_path, target_lang):
-    """Translate one clip's subtitles to target_lang (deep-translator).
+    """Translate one clip's subtitles using the built-in Google adapter.
 
     Returns (ok: bool, message: str). Writes <stem>_<lang>.json in subs/.
     """
@@ -185,7 +185,7 @@ def translate_clip(project_path, video_path, target_lang):
         from scripts.translate_json import translate_json_file
     except Exception as e:
         return False, ("Translation unavailable — install deps first: "
-                       "pip install deep-translator tqdm ({})".format(e))
+                       "install the translation prerequisites ({})".format(e))
     try:
         data = asyncio.run(translate_json_file(src, dst, lang))
         count = len(data.get("segments", []))

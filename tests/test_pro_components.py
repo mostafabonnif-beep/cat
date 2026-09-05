@@ -189,6 +189,45 @@ def test_translate_chunk_bounded_retry_falls_back(monkeypatch):
     assert result == "النص الأصلي"
 
 
+def test_google_translator_parses_response_without_third_party_package(monkeypatch):
+    import scripts.translate_json as translate_json
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [[["hello", None], [" world", None], [None, None]]]
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return FakeResponse()
+
+    monkeypatch.setattr(translate_json.requests, "get", fake_get)
+    translator = translate_json.GoogleTranslator(source="ar", target="en", timeout=4)
+
+    assert translator.translate("مرحبا") == "hello world"
+    assert captured["url"].endswith("/translate_a/single")
+    assert captured["kwargs"]["params"]["sl"] == "ar"
+    assert captured["kwargs"]["params"]["tl"] == "en"
+    assert captured["kwargs"]["timeout"] == 4
+
+
+def test_adjust_segments_accepts_empty_subtitle_text():
+    from scripts.translate_json import adjust_segments
+
+    segments = adjust_segments([
+        {"text": "", "start": 0, "end": 1, "words": []},
+        {"text": "hello", "start": 1, "end": 2, "words": []},
+    ])
+
+    assert segments[0]["words"] == []
+    assert segments[1]["words"][0]["word"] == "hello"
+
+
 def test_transcription_validation_checks_srt_and_tsv(tmp_path):
     from scripts.transcription_validation import validate_transcription
 

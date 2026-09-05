@@ -23,5 +23,7 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run Ruff lint
         run: ruff check .
+      - name: Audit dependencies
+        run: pip-audit --progress-spinner off
       - name: Run unit tests
         run: pytest -v

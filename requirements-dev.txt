@@ -3,6 +3,7 @@
 # previously CI failed at collection with ModuleNotFoundError (cv2, gradio).
 pytest>=8.0
 ruff>=0.9
+pip-audit>=2.9
 numpy<2
 cryptography
 
@@ -17,7 +18,6 @@ fastapi
 uvicorn
 psutil
 tqdm
-deep-translator
 
 # Optional AI backends imported defensively, but present in CI to keep the
 # full test surface green (test_ab_and_crash, test_cli_main).

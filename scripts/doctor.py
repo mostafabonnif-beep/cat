@@ -32,7 +32,6 @@ DEPENDENCIES = [
     ("insightface", False),
     ("torch", False),
     ("google.genai", False),
-    ("deep_translator", False),
     ("g4f", False),
     ("tqdm", False),
     # v6 features (Roadmap 2.1 / 4.4) — optional but strongly recommended:

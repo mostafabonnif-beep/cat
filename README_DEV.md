@@ -1,7 +1,7 @@
 # Development Notes
 
 ## Done
-- ✅ Test suite: 73 unit tests (`tests/`) covering i18n, subtitle helpers, JSON cutting, saving, and WebUI utils. Run with `pytest` (install `requirements-dev.txt`).
+- ✅ Test suite: 915 tests (`tests/`) covering i18n, subtitle helpers, JSON cutting, saving, and WebUI utils. Run with `pytest` (install `requirements-dev.txt`).
 - ✅ i18n overhaul: `ar_SA.json` fully covers every UI/CLI string; `en_US.json` cleaned (had 71 Arabic values); `pt_BR`/`tr_TR` completed with English fallback. Coverage guarded by `tests/test_i18n_completeness.py`.
 - ✅ Locale loading no longer depends on the current working directory.
 - ✅ Language is configurable: `VIRALCUTTER_LANG` env var (default `ar_SA`).

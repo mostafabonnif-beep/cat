@@ -19,7 +19,7 @@ _HEAVY_MODULES = [
     "cv2", "mediapipe", "torch", "torchaudio", "whisperx", "insightface",
     "onnxruntime", "av", "moviepy", "librosa", "soundfile",
     # light but not in requirements-dev.txt (CI installs pytest + numpy only)
-    "tqdm", "tqdm.asyncio", "deep_translator", "psutil",
+    "tqdm", "tqdm.asyncio", "psutil",
 ]
 
 
