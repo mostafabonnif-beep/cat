@@ -186,12 +186,14 @@ run_webui.bat
 
 **الأوضاع الأربعة** (من الواجهة أو `--safety-mode`):
 
-**تشغيل OpenAI Moderation اختيارياً**:
+**التشغيل التلقائي**:
 ```bash
-set OPENAI_API_KEY=ضع_المفتاح_هنا
-python main_improved.py --ai-backend openai-moderation --safety-mode block --safety-ai on
+# بعد حفظ OPENAI_API_KEY في بيئة التشغيل، لا تحتاج إلى --safety-backend:
+python main_improved.py --ai-backend gemini --safety-mode block --safety-ai on
 ```
-على Linux/macOS استخدم `export OPENAI_API_KEY=...`. لا تضع المفتاح داخل Git أو ملفات المشروع. هذا الفحص السحابي ليس قائمة كلمات رسمية من YouTube؛ هو طبقة مستقلة فوق الفحص المحلي، والقرار النهائي يبقى مرتبطاً بسياق المقطع ومراجعة التقرير.
+الوضع `auto` يختار OpenAI Moderation تلقائياً إذا وجد `OPENAI_API_KEY`، ثم Gemini/G4F، وإلا يستخدم الفحص المحلي. لا تستخدم OpenAI Moderation كـ `--ai-backend`؛ هو مراجع أمان فقط وليس مولّد المقاطع. على Linux/macOS استخدم `export OPENAI_API_KEY=...`، وعلى Windows `set OPENAI_API_KEY=...`. لا تضع المفتاح داخل Git أو ملفات المشروع. هذا الفحص السحابي ليس قائمة كلمات رسمية من YouTube؛ هو طبقة مستقلة فوق الفحص المحلي، والقرار النهائي يبقى مرتبطاً بسياق المقطع ومراجعة التقرير.
+
+**التشغيل التلقائي الموصى به**: لا تحتاج إلى اختيار OpenAI كـ AI الخاص بتحليل المقاطع. عند تشغيل `run.bat` أو `run.sh` أو الواجهة، يستخدم `--safety-backend auto` تلقائياً OpenAI Moderation إذا كان `OPENAI_API_KEY` موجوداً، ويعود إلى Gemini/G4F أو الفحص المحلي عند عدم وجوده. بذلك يبقى محرك إنشاء المقاطع مستقلاً، وتعمل حماية YouTube وحدها تلقائياً.
 
 | الوضع | السلوك |
 | :--- | :--- |

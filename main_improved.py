@@ -346,7 +346,31 @@ def _preflight_or_exit(mode="auto-fix"):
         return 0
 
 
-def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_key, workflow_choice):
+def resolve_safety_backend(requested, ai_backend, api_key=None):
+    """Choose the contextual safety reviewer without changing viral analysis."""
+    requested = str(requested or "auto").strip().lower()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("OPENAI_MODERATION_API_KEY", "").strip()
+    gemini_key = str(api_key or "").strip() if ai_backend == "gemini" else os.getenv("GEMINI_API_KEY", "").strip()
+
+    if requested == "auto":
+        if openai_key:
+            return "openai-moderation", openai_key
+        if ai_backend in {"gemini", "g4f"}:
+            return ai_backend, gemini_key or api_key
+        if gemini_key:
+            return "gemini", gemini_key
+        return "local", None
+    if requested == "openai-moderation":
+        return requested, openai_key or (api_key if ai_backend == "openai-moderation" else None)
+    if requested == "gemini":
+        return requested, gemini_key or (api_key if ai_backend == "gemini" else None)
+    if requested == "g4f":
+        return requested, api_key
+    return "local", None
+
+
+def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_key, workflow_choice,
+                     safety_backend=None, safety_api_key=None):
     """Stages 3.7–3.8: YouTube policy shield (extracted from main() for testability).
 
     Auto-updates the blocklist, applies the keyword safety filter, then the
@@ -358,6 +382,12 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
         return viral_segments
     if args.safety_mode == "off":
         return viral_segments
+
+    review_backend, review_key = resolve_safety_backend(
+        safety_backend or getattr(args, "safety_backend", "auto"),
+        ai_backend,
+        safety_api_key if safety_api_key is not None else api_key,
+    )
 
     # Auto-update the word list from GitHub (daily throttle, offline-safe)
     if args.safety_autoupdate == "on":
@@ -392,7 +422,9 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
             sys.exit(1)
 
     # 3.8. Second-pass AI policy review (context-level violations)
-    if safety_ai.should_run_ai_review(ai_backend, args.safety_ai) and viral_segments.get("segments"):
+    if args.safety_ai == "on":
+        print(i18n("Contextual safety backend: {}.").format(review_backend))
+    if safety_ai.should_run_ai_review(review_backend, args.safety_ai) and viral_segments.get("segments"):
         print(i18n("Running AI safety review..."))
         try:
             kept_segments = viral_segments.get("segments", [])
@@ -403,8 +435,8 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
                 "text": safety_filter.segment_text(seg, transcript_for_review),
             } for pos, seg in enumerate(kept_segments)]
             verdicts = safety_ai.review_segments(
-                clips, ai_backend,
-                api_key=api_key, model_name=args.ai_model_name)
+                clips, review_backend,
+                api_key=review_key, model_name=args.ai_model_name)
             if verdicts:
                 kept_after, ai_report = safety_ai.apply_ai_review(
                     kept_segments, clips, verdicts, mode=args.safety_mode)
@@ -433,7 +465,7 @@ def run_safety_stage(viral_segments, *, project_folder, args, ai_backend, api_ke
                 print(i18n("AI safety review failed; fail-closed policy refuses to continue."))
                 sys.exit(1)
     elif args.safety_ai == "on" and args.safety_mode != "off":
-        debug(f"AI safety review skipped for backend '{ai_backend}' (needs gemini/g4f/openai-moderation).")
+        debug(f"AI safety review skipped for backend '{review_backend}' (no configured contextual reviewer).")
 
     if args.safety_mode in ("block", "censor") and not viral_segments.get("segments"):
         print(i18n("Error: All segments were blocked by the safety filter (hate speech / policy violations)."))
@@ -512,8 +544,8 @@ def main():
     parser.add_argument("--model", default="large-v3-turbo", help="Whisper model to use")
     parser.add_argument("--transcription-device", choices=["auto", "cpu", "cuda"], default="auto", help="WhisperX device: auto, cpu, or cuda")
     
-    parser.add_argument("--ai-backend", choices=["manual", "gemini", "g4f", "openai-moderation", "local"], help="AI backend for viral analysis")
-    parser.add_argument("--api-key", help="API key for the selected backend; OPENAI_API_KEY is used for openai-moderation")
+    parser.add_argument("--ai-backend", choices=["manual", "gemini", "g4f", "local"], help="AI backend for viral analysis; moderation is selected separately with --safety-backend")
+    parser.add_argument("--api-key", help="API key for the selected viral-analysis backend")
     
     parser.add_argument("--chunk-size", help="Override Chunk Size")
     parser.add_argument("--ai-model-name", help="Override AI Model Name")
@@ -562,6 +594,8 @@ def main():
     parser.add_argument("--safety-extra-terms", help="Path to a safety_terms.json file with extra blocked terms")
     parser.add_argument("--safety-ai", choices=["on", "off"], default="on",
                         help="Second-pass policy review of surviving segments. Supports Gemini, G4F, and openai-moderation. Default: on")
+    parser.add_argument("--safety-backend", choices=["auto", "local", "gemini", "g4f", "openai-moderation"], default="auto",
+                        help="Contextual safety backend. auto prefers OpenAI moderation when OPENAI_API_KEY exists, then Gemini/G4F, otherwise local checks.")
     parser.add_argument("--autopilot", action="store_true",
                         help="Run the end-to-end safety autopilot: AI review, OCR, visual checks, provenance, audio QC, metadata, and hard publish gates.")
     parser.add_argument("--safety-fail-closed", choices=["on", "off"], default="on",
@@ -1394,6 +1428,7 @@ def main():
             ai_backend=ai_backend,
             api_key=api_key,
             workflow_choice=workflow_choice,
+            safety_backend=getattr(args, "safety_backend", "auto"),
         )
 
         # Normalize any legacy or manually edited segment list before the

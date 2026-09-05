@@ -173,6 +173,18 @@ def _segments(*texts):
     return {"segments": [{"title": f"clip {i}", "text": t} for i, t in enumerate(texts)]}
 
 
+def test_resolve_safety_backend_prefers_openai_moderation(cli, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    assert cli.resolve_safety_backend("auto", "manual") == ("openai-moderation", "test-openai-key")
+
+
+def test_resolve_safety_backend_falls_back_to_local(cli, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_MODERATION_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert cli.resolve_safety_backend("auto", "manual") == ("local", None)
+
+
 def test_safety_stage_skips_workflow_3(cli, tmp_path):
     segs = _segments("hello")
     out = cli.run_safety_stage(segs, project_folder=str(tmp_path),
