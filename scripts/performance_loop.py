@@ -49,6 +49,20 @@ def _read_history(project_folder: str) -> list[dict[str, Any]]:
     return events
 
 
+def _publish_hour(value: Any) -> int | None:
+    """Local hour (0-23) of a publish timestamp, for schedule correlation."""
+    try:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        moment = datetime.fromisoformat(text)
+        return int(moment.astimezone().hour)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
 def _published_videos(project_folder: str) -> list[dict[str, Any]]:
     """Published events enriched with segment features from the scorecard."""
     segments = {}
@@ -70,6 +84,9 @@ def _published_videos(project_folder: str) -> list[dict[str, Any]]:
         if match:
             entry = segments.get(int(match.group(1)), {}) or {}
         features = {key: entry.get(key) for key in FEATURE_KEYS if entry.get(key) is not None}
+        hour = _publish_hour(event.get("publish_at") or event.get("timestamp"))
+        if hour is not None:
+            features["publish_hour"] = hour
         published.append({
             "video_id": video_id,
             "title": event.get("title", ""),
