@@ -19,7 +19,7 @@ readme = "README.md"
 requires-python = ">=3.9,<3.13"
 license = { text = "GPL-3.0" }
 dependencies = [
-    "numpy<2",
+    "numpy<3",
     "g4f",
     "yt-dlp[default]",
     "ffmpeg-python",
@@ -55,7 +55,7 @@ transcribe = [
     "whisperx",
     "torch",
     "torchaudio",
-    "numpy<2",
+    "numpy<3",
 ]
 upload = [
     "google-api-python-client",
@@ -67,7 +67,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.9",
     "pip-audit>=2.9",
-    "numpy<2",
+    "numpy<3",
 ]
 
 [build-system]
