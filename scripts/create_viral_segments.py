@@ -7,6 +7,11 @@ import re
 import sys
 import time
 
+try:
+    from scripts import performance_weights
+except Exception:
+    performance_weights = None
+
 # Configura stdout para evitar erros de encoding no Windows (substitui caracteres inválidos por ?)
 # Aplicado apenas no Windows — em Linux/macOS (e no CI/pytest) o stdout nativo já é UTF-8
 # e substituí-lo quebraria o capture do pytest.
@@ -506,20 +511,27 @@ def _choose_recommended_title(segment):
     return max(enumerate(clean), key=lambda item: (_title_quality_score(item[1]), -item[0]))[1]
 
 
-def _selection_score(segment):
+def _selection_score(segment, weights=None):
     """Compute a transparent editorial score without hiding the AI score.
 
     The original ``score`` remains untouched. This second score rewards a
     strong hook, narrative completeness, clarity and novelty, while keeping
-    the model's virality estimate as the largest component.
+    the model's virality estimate as the largest component. ``weights`` may
+    come from performance_weights.load_weights to nudge components based on
+    measured YouTube outcomes.
     """
+    if isinstance(weights, dict) and isinstance(weights.get("weights"), dict):
+        weights = weights["weights"]
+    weights = weights or {"virality": 0.45, "hook": 0.20, "completeness": 0.20,
+                          "clarity": 0.10, "novelty": 0.05}
     virality = _bounded_score(segment.get("score"), 0)
     hook = _bounded_score(segment.get("hook_strength"), virality)
     completeness = _bounded_score(segment.get("narrative_completeness"), virality)
     clarity = _bounded_score(segment.get("clarity_score"), virality)
     novelty = _bounded_score(segment.get("novelty_score"), virality)
-    value = (0.45 * virality + 0.20 * hook + 0.20 * completeness
-             + 0.10 * clarity + 0.05 * novelty)
+    value = (weights["virality"] * virality + weights["hook"] * hook
+             + weights["completeness"] * completeness
+             + weights["clarity"] * clarity + weights["novelty"] * novelty)
     return round(max(0.0, min(100.0, value)), 1), {
         "virality": round(virality, 1),
         "hook": round(hook, 1),
@@ -861,8 +873,13 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             continue
 
     # Add a transparent score before de-duplication and ranking.
+    perf_weights = performance_weights.load_weights(os.getcwd()) if performance_weights else None
     for candidate in processed_segments:
-        candidate["selection_score"], candidate["selection_breakdown"] = _selection_score(candidate)
+        candidate["selection_score"], candidate["selection_breakdown"] = _selection_score(candidate, perf_weights)
+        if perf_weights:
+            candidate["selection_score"] = round(max(0.0, min(100.0,
+                float(candidate["selection_score"]) + float(perf_weights.get("duration_bonus", 0.0)))), 1)
+            candidate["selection_breakdown"]["performance_basis"] = perf_weights.get("basis", "defaults")
 
     # Deduplication: keep one title for each substantially identical source window.
     all_segments = deduplicate_segments(processed_segments)
@@ -890,8 +907,8 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
 def segment_titles(segment):
     """A/B test titles for a segment: alt_titles + the main title (Roadmap 5.3).
 
-    Returns a de-duplicated list; the main title is always last as the
-    safe default choice.
+    Returns a de-duplicated list ordered by measured title quality; the
+    strongest candidate first becomes the recommended default.
     """
     seen, out = set(), []
     for t in list(segment.get("alt_titles") or []) + [segment.get("title", "")]:
@@ -899,7 +916,11 @@ def segment_titles(segment):
         if t and t.lower() not in seen:
             seen.add(t.lower())
             out.append(t)
-    return out or ["Viral Segment"]
+    if not out:
+        return ["Viral Segment"]
+    order = {t: i for i, t in enumerate(out)}
+    out.sort(key=lambda t: (order[t], -_title_quality_score(t)))
+    return out
 
 
 def segment_captions(segment):
