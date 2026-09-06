@@ -76,3 +76,11 @@ def test_recommended_title_prefers_readable_candidate():
         "alt_titles": ["كيف تغيّرت النتيجة في لحظة؟", "نتيجة مفاجئة"],
     }
     assert _choose_recommended_title(segment) == "كيف تغيّرت النتيجة في لحظة؟"
+
+
+def test_title_quality_penalizes_keyword_stuffing():
+    from scripts.create_viral_segments import _title_quality_score
+
+    stuffed = _title_quality_score("حرب حرب الكوكايين تطيح تطيح بصناع المحتوى")
+    clean = _title_quality_score("كيف تطيح حرب الكوكايين بصناع المحتوى؟")
+    assert stuffed < clean

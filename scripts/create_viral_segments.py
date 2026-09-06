@@ -484,6 +484,21 @@ def _title_quality_score(title):
         score -= 12.0
     if text.isupper() and any(char.isalpha() for char in text):
         score -= 20.0
+    # Word-salad check: a title that repeats the same common word several
+    # times reads like keyword stuffing ("حرب حرب الكوكايين تطيح تطيح").
+    words = [w for w in re.split(r"\W+", text.casefold()) if w]
+    if len(words) >= 4:
+        counts = {}
+        for word in words:
+            if len(word) > 2:
+                counts[word] = counts.get(word, 0) + 1
+        max_repeat = max(counts.values()) if counts else 0
+        if max_repeat >= 2:
+            score -= 10.0 * (max_repeat - 1)
+    # A question title with no repeated words reads like a crafted
+    # curiosity gap rather than a keyword pile-up.
+    if len(words) >= 6 and len(set(words)) == len(words) and text.endswith(("؟", "?")):
+        score += 3.0
     return round(max(0.0, min(100.0, score)), 1)
 
 
