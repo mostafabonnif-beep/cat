@@ -46,15 +46,29 @@ class _Track:
         self.id = track_id
         self.bbox = [float(v) for v in bbox[:4]]
         self.center = _box_center(self.bbox)
+        # Velocity is stored PER FRAME (not per detection cycle). Detection
+        # cycles have variable length (5-frame 1-face cycles vs ~1s 2-face
+        # cycles), so a per-cycle velocity overshoots/undershoots the
+        # prediction whenever the interval changes.
         self.velocity = (0.0, 0.0) if velocity is None else velocity
         self.missing_cycles = 0
         self.last_frame = frame_index
         self.born_frame = frame_index
 
-    def predict_center(self):
-        """Where we expect this face to be on the next detection cycle."""
-        return (self.center[0] + self.velocity[0],
-                self.center[1] + self.velocity[1])
+    def predict_center(self, at_frame=None):
+        """Where we expect this face to be at ``at_frame``.
+
+        Defaults to one cycle after the last sighting (legacy behaviour).
+        Passing the current frame index scales the prediction by the actual
+        elapsed time, so a face missing for several cycles is searched where
+        it really should be, not one velocity-step away.
+        """
+        if at_frame is None:
+            dt = 1.0
+        else:
+            dt = max(0.0, float(at_frame) - float(self.last_frame))
+        return (self.center[0] + self.velocity[0] * dt,
+                self.center[1] + self.velocity[1] * dt)
 
 
 class FaceTracker:
@@ -112,7 +126,7 @@ class FaceTracker:
             diag = _box_diag(box)
             for tid, track in alive.items():
                 if track.missing_cycles > 0:
-                    tc = track.predict_center()
+                    tc = track.predict_center(self.frame_index)
                 else:
                     tc = track.center
                 bc = _box_center(box)
@@ -134,9 +148,12 @@ class FaceTracker:
             box = boxes[i]
             new_center = _box_center(box)
             if track.missing_cycles == 0 and track.last_frame < self.frame_index:
-                # EMA velocity from the observed centre displacement.
-                vx = new_center[0] - track.center[0]
-                vy = new_center[1] - track.center[1]
+                # EMA velocity from the observed centre displacement,
+                # normalised to pixels-per-frame so the prediction stays
+                # meaningful when the detection interval changes.
+                dt = max(1, self.frame_index - track.last_frame)
+                vx = (new_center[0] - track.center[0]) / dt
+                vy = (new_center[1] - track.center[1]) / dt
                 a = self.velocity_alpha
                 track.velocity = (a * vx + (1 - a) * track.velocity[0],
                                   a * vy + (1 - a) * track.velocity[1])

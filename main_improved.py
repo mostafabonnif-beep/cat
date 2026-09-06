@@ -1600,7 +1600,8 @@ def main():
                         segments_data=viral_segments.get("segments", []) if viral_segments else None,
                         no_face_mode=args.no_face_mode,
                         smoothing=float(getattr(args, "face_smoothing", 0.55)),
-                        headroom=float(getattr(args, "face_headroom", 0.12))
+                        headroom=float(getattr(args, "face_headroom", 0.12)),
+                        face_zoom=float(getattr(args, "face_zoom", 0.0))
             )
 
 

@@ -24,6 +24,7 @@ result when the network is unavailable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import urllib.parse
@@ -124,6 +125,12 @@ def _parse_suggest_response(raw: str):
 # Scoring
 # ---------------------------------------------------------------------------
 
+# Hook words matched on WORD boundaries (substring matching used to reward
+# "how" inside "show" or "why" inside "anywhere").
+_HOOK_WORDS_RE = re.compile(
+    r"(?<!\w)(?:كيف|لماذا|ما هو|طريقة|أفضل|سر|خطأ|جديد"
+    r"|how|why|best|secret|mistake|trick|tips)(?!\w)")
+
 def _len_score(title: str) -> float:
     n = len(title)
     if 35 <= n <= 70:
@@ -139,13 +146,11 @@ def _hook_score(title: str) -> float:
     score = 0.0
     if title.endswith(("?", "؟")):
         score += 8.0
-    elif title.endswith(("!", "!")):
+    elif title.endswith("!"):
         score += 4.0
     if re.search(r"\d", title):
         score += 6.0
-    if any(word in title for word in ("كيف", "لماذا", "ما هو", "طريقة", "أفضل",
-                                      "سر", "خطأ", "جديد", "how", "why", "best",
-                                      "secret", "mistake", "trick", "tips")):
+    if _HOOK_WORDS_RE.search(title.casefold()):
         score += 7.0
     if title.count("!") > 2 or title.count("؟") > 2:
         score -= 6.0
@@ -233,7 +238,11 @@ def generate_titles(topic: str, keywords: list[str] | None = None,
     keywords = [str(k) for k in (keywords or []) if str(k).strip()]
     candidates = []
     import random
-    rng = random.Random(hash(topic) & 0xFFFFFFFF)
+    # Deterministic ACROSS processes: the builtin hash() is salted per
+    # interpreter (PYTHONHASHSEED), so the "same topic, same titles"
+    # contract used to break on every restart.
+    seed = int(hashlib.sha256(topic.casefold().encode("utf-8")).hexdigest()[:8], 16)
+    rng = random.Random(seed)
     for i, template in enumerate(_TEMPLATES):
         title = template.format(
             topic=topic,

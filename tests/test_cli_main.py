@@ -255,16 +255,21 @@ def test_safety_stage_fails_closed_when_filter_errors(cli, tmp_path, monkeypatch
 def test_process_segments_keeps_distinct_partial_overlap():
     from scripts.create_viral_segments import process_segments
 
+    # Transcript longer than the 15s minimum so windows never need to extend
+    # past the media (clamping them would collapse both onto the same range).
     transcript = [
         {"start": 0.0, "end": 1.0, "text": "first"},
-        {"start": 8.0, "end": 9.0, "text": "second"},
+        {"start": 10.0, "end": 11.0, "text": "second"},
+        {"start": 40.0, "end": 41.0, "text": "third"},
     ]
     raw = [
         {"title": "A", "start_time_ref": "0s", "start_text": "first", "end_text": "", "score": 90},
-        {"title": "B", "start_time_ref": "8s", "start_text": "second", "end_text": "", "score": 80},
+        {"title": "B", "start_time_ref": "10s", "start_text": "second", "end_text": "", "score": 80},
     ]
     result = process_segments(raw, transcript, 15, 90)
     assert len(result["segments"]) == 2
+    windows = {(round(s["start_time"]), round(s["end_time"])) for s in result["segments"]}
+    assert windows == {(0, 15), (10, 25)}
 
 
 def test_content_guard_stage_filters_before_export(cli, tmp_path):

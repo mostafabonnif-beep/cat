@@ -691,7 +691,7 @@ def generate_short_haar(input_file, output_file, index, project_folder, final_fo
     if not finalize_video(input_file, output_file, index, fps, project_folder, final_folder):
         raise RuntimeError(f"Could not finalize Haar clip {index}: audio/mux validation failed")
 
-def generate_short_insightface(input_file, output_file, index, project_folder, final_folder, face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, no_face_mode="padding", smoothing=0.55, headroom=0.12):
+def generate_short_insightface(input_file, output_file, index, project_folder, final_folder, face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0):
     """Face detection using InsightFace (SOTA)."""
     print(f"Processing (InsightFace): {input_file} | Mode: {face_mode}")
     
@@ -833,11 +833,17 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                     
                     faces = valid_faces
             
-            # --- ACTIVE SPEAKER UPDATE ---
-            activity_track_ids = face_tracker.update(
-                frame_index, [f['bbox'] for f in faces] if faces else [])
-            for face, track_id in zip(faces, activity_track_ids):
-                face['_track_id'] = track_id
+            # --- ACTIVE SPEAKER UPDATE (pre-lookahead identities) ---
+            # Only the focus path consumes _track_id before the lookahead;
+            # the authoritative tracker update happens once per cycle on the
+            # FINAL face list (after the lookahead, below). Running the
+            # mutating update here unconditionally used to fork identities:
+            # two update() calls per cycle with different face lists.
+            if focus_active_speaker and faces:
+                activity_track_ids = face_tracker.update(
+                    frame_index, [f['bbox'] for f in faces])
+                for face, track_id in zip(faces, activity_track_ids):
+                    face['_track_id'] = track_id
             if faces:
                 # 1. Update activity scores for current faces
                 # Simple matching to previous state
@@ -932,8 +938,14 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                      best_dist = 9999
                      best_idx = -1
                      if faces_activity_state:
+                         # Identity match first — but ONLY when both sides
+                         # carry a real track id. ``None == None`` used to be
+                         # an instant match (best_dist=0), gluing one person's
+                         # activity history onto whoever showed up first.
                          for i, old_s in enumerate(faces_activity_state):
-                             if old_s.get('track_id') == f.get('_track_id'):
+                             if (f.get('_track_id') is not None
+                                     and old_s.get('track_id') is not None
+                                     and old_s.get('track_id') == f.get('_track_id')):
                                  best_idx = i
                                  best_dist = 0.0
                                  break
@@ -1081,6 +1093,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
 
             # Fallback Lookahead: If detection fails or partial
             # But DO NOT look ahead if we are in Crowd Mode (we explicitly wanted 0 faces)
+            faces_from_lookahead = False
             if len(faces) < target_faces and not is_crowd:
                 # Try 1 frame ahead
                 ret2, frame2 = cap.read()
@@ -1088,9 +1101,13 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                      faces2 = detect_faces_insightface(frame2)
                      
                      # --- Apply same filtering to lookahead ---
+                     # Never LOOSER than the user's confidence threshold:
+                     # a 0.50 floor keeps recovery strict, but a user-set
+                     # 0.65 must not be silently bypassed by the lookahead.
+                     lookahead_confidence = max(0.50, float(confidence_threshold))
                      valid_faces2 = []
                      if faces2:
-                         faces2 = [f for f in faces2 if f.get('det_score', 0) > 0.50]
+                         faces2 = [f for f in faces2 if f.get('det_score', 0) > lookahead_confidence]
                          if faces2:
                              for f in faces2:
                                  w = f['bbox'][2] - f['bbox'][0]
@@ -1108,8 +1125,10 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                      # If lookahead found what we wanted OR found something better than nothing
                      if len(faces2) >= target_faces:
                          faces = faces2 # Use lookahead faces for current frame
+                         faces_from_lookahead = True
                      elif len(faces) == 0 and len(faces2) > 0:
                          faces = faces2 # Better than nothing
+                         faces_from_lookahead = True
                          
                      buffered_frame = frame2 # Store for next iteration
 
@@ -1117,6 +1136,23 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
             # (after lookahead), then use stable track IDs for layout slots.
             track_ids = face_tracker.update(
                 frame_index, [f['bbox'] for f in faces] if faces else [])
+            # Assign the authoritative IDs to the final faces so every
+            # downstream consumer (speaker selector, slot ordering, activity
+            # history) shares ONE identity source. When the lookahead replaced
+            # the face list, the pre-lookahead speaker ordering was computed
+            # on stale faces — re-apply it here, otherwise the crop silently
+            # jumps to an arbitrary person on recovery frames.
+            if faces:
+                for face, track_id in zip(faces, track_ids):
+                    face['_track_id'] = track_id
+            if faces_from_lookahead and focus_active_speaker and faces and len(faces) >= 2:
+                faces, speaker_switched = order_faces_for_crop(
+                    faces, focus_active_speaker=True,
+                    selector=active_speaker_selector, frame_index=frame_index)
+                if speaker_switched:
+                    speaker_switch_count += 1
+                    speaker_switch_frames.append(frame_index)
+                    print(f"DEBUG: Active speaker switched at frame {frame_index} (lookahead)")
 
             detections = []
             
@@ -1362,7 +1398,8 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
         else:
              frame_1_face_count += 1
              result = crop_and_resize_insightface(frame, current_faces[0],
-                                                  headroom=headroom)
+                                                  headroom=headroom,
+                                                  face_zoom=face_zoom)
              timeline_frames.append((frame_index, "1"))
              
         # Capture Coordinates (Frame-by-Frame)
@@ -1468,7 +1505,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     return "1"
 
 
-def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, segments_data=None, no_face_mode="padding", smoothing=0.55, headroom=0.12):
+def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, segments_data=None, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0):
     # Lazy init solutions only when needed to avoid AttributeError if import failed partially
     mp_face_detection = None
     mp_face_mesh = None
@@ -1552,7 +1589,10 @@ def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detec
         base_name_final = input_filename.replace("_original_scale.mp4", "")
         # If legacy name, try to improve it
         if input_filename.startswith("output") and segments_data and index < len(segments_data):
-             title = segments_data[index].get("title", f"Segment_{index}")
+             seg = segments_data[index]
+             # Prefer the recommended (quality-ranked) title so the filename
+             # matches what the review UI and publisher actually use.
+             title = seg.get("recommended_title") or seg.get("title", f"Segment_{index}")
              safe_title = "".join([c for c in title if c.isalnum() or c in " _-"]).strip().replace(" ", "_")[:60]
              base_name_final = f"{index:03d}_{safe_title}"
 
@@ -1571,7 +1611,8 @@ def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detec
                                                      active_speaker_motion_sensitivity=active_speaker_motion_sensitivity,
                                                      active_speaker_decay=active_speaker_decay,
                                                      no_face_mode=no_face_mode,
-                                                     smoothing=smoothing, headroom=headroom)
+                                                     smoothing=smoothing, headroom=headroom,
+                                                     face_zoom=face_zoom)
                     if res: detected_mode = res
                     success = True
                 except Exception as e:

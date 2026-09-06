@@ -21,7 +21,18 @@ class TestABTitles:
     def test_segment_titles_dedup(self):
         cvs = self._cvs()
         titles = cvs.segment_titles({"title": "Main", "alt_titles": ["A", "B", "A"]})
-        assert titles == ["A", "B", "Main"]
+        # De-duplicated, every candidate kept, and quality-ranked: the tiny
+        # placeholder candidates sink below the real title.
+        assert sorted(titles) == ["A", "B", "Main"]
+        assert len(titles) == 3
+        assert titles[0] == "Main"
+
+    def test_segment_titles_orders_by_quality(self):
+        cvs = self._cvs()
+        strong = "كيف تغيّرت النتيجة بالكامل في ثوانٍ معدودة؟"
+        weak = "LOUD NOISES"
+        titles = cvs.segment_titles({"title": weak, "alt_titles": [strong]})
+        assert titles[0] == strong
 
     def test_segment_titles_fallback(self):
         cvs = self._cvs()

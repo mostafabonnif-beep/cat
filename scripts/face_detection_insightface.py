@@ -86,7 +86,7 @@ def detect_faces_insightface(frame):
         results.append(res)
     return results
 
-def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_height=1920, headroom=0.0):
+def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_height=1920, headroom=0.0, face_zoom=0.0):
     """
     Crops and resizes the frame to target dimensions centered on the face_bbox.
     face_bbox: [x1, y1, x2, y2]
@@ -94,11 +94,17 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
     ``headroom`` (0.0 = centered) shifts the crop upward so the face sits in
     the upper third of the 9:16 frame — the classic "talking head" framing
     used by professional Shorts editors. 0.0 .. 0.3 are sane values.
+
+    ``face_zoom`` (0.0 = legacy behaviour) makes the crop height adapt to the
+    face size so the face occupies roughly that fraction of the frame height
+    (0.33 ≈ the standard talking-head zoom). The crop never gets tighter
+    than 40% of the source height, so group shots keep their context.
     """
     h, w, _ = frame.shape
     x1, y1, x2, y2 = [float(value) for value in face_bbox[:4]]
     face_center_x = int(round((x1 + x2) / 2.0))
     face_center_y = int(round((y1 + y2) / 2.0))
+    face_h = max(1.0, y2 - y1)
 
     # Calculate crop area based on target aspect ratio and face position
     # We want to keep the face roughly in the upper-middle or center?
@@ -115,7 +121,17 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
     # Trying to maximize height usage of the source frame usually.
 
     # Let's say we want to use the full height of the source if possible
-    source_h = int(h)
+    if face_zoom and float(face_zoom) > 0.0:
+        # Face-size-aware framing: the face should fill about ``face_zoom``
+        # of the output height instead of always using the full source
+        # height (which leaves distant speakers tiny in the Short).
+        zoom_fraction = min(0.9, max(0.1, float(face_zoom)))
+        source_h = int(face_h / zoom_fraction)
+        # Clamp: never tighter than 40% of the source height, never looser
+        # than the full source frame.
+        source_h = max(int(h * 0.4), min(source_h, int(h)))
+    else:
+        source_h = int(h)
     source_w = int(source_h * (target_width / target_height))
 
     if source_w > w:
@@ -127,7 +143,12 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
     # Each 0.1 shifts the crop center up by 10% of the crop height.
     if headroom > 0:
         shift = int(source_h * min(0.35, float(headroom)))
-        shift = min(shift, max(0, int((face_center_y - y1) / 2.0)))
+        # Keep the whole face inside the crop: shifting up by more than
+        # (source_h - face_h) / 2 pushes the chin out of the frame. The old
+        # face_h/4 cap silently disabled headroom for any face smaller than
+        # half the frame — i.e. almost all talking-head footage.
+        max_shift = max(0, int((source_h - face_h) / 2.0))
+        shift = min(shift, max_shift)
     else:
         shift = 0
 

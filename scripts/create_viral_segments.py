@@ -64,16 +64,47 @@ except ImportError:
 def clean_json_response(response_text):
     """
     Limpa a resposta focando em encontrar o objeto JSON que contém a chave "segments".
-    Estratégia: 
-    1. Busca a palavra "segments", encontra o '{' anterior e usa raw_decode.
-    2. Fallback: Parsear lista de segmentos item a item (recuperação de JSON truncado).
+
+    Two passes:
+    1. Parse the response AS-IS. Valid JSON containing escaped characters
+       (e.g. "line\\nbreak" inside an Arabic title) MUST NOT be normalized —
+       rewriting \\n to a raw newline corrupts strict JSON and used to drop
+       the whole segment list silently.
+    2. Only when nothing parsed: apply the legacy over-escape fix (\\\\n →
+       newline, \\\" → quote) for double-escaped/manual-paste payloads and
+       retry.
     """
     if not isinstance(response_text, str):
         response_text = str(response_text)
-    
+
     if not response_text:
         return {"segments": []}
 
+    result = _extract_segments_json(response_text)
+    if result["segments"]:
+        return result
+
+    try:
+        if "\\n" in response_text or "\\\"" in response_text:
+            normalized = (response_text
+                          .replace("\\n", "\n")
+                          .replace("\\\"", "\"")
+                          .replace("\\'", "'"))
+            if normalized != response_text:
+                fallback = _extract_segments_json(normalized)
+                if fallback["segments"]:
+                    return fallback
+    except Exception:
+        pass
+    return result
+
+
+def _extract_segments_json(response_text):
+    """
+    Estratégia:
+    1. Busca a palavra "segments", encontra o '{' anterior e usa raw_decode.
+    2. Fallback: Parsear lista de segmentos item a item (recuperação de JSON truncado).
+    """
     # 1. Limpeza preliminar
     # Remove tags de pensamento (DeepSeek R1)
     response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
@@ -83,14 +114,6 @@ def clean_json_response(response_text):
     # genuinely truncated replies.
     response_text = re.sub(r'```(?:json)?', '', response_text, flags=re.IGNORECASE)
     response_text = response_text.replace('```', '')
-    
-    # Normaliza escapes excessivos (\n virando \\n) e aspas se parecer necessário
-    try:
-        if "\\n" in response_text or "\\\"" in response_text:
-             # Tenta um decode básico de escapes
-             response_text = response_text.replace("\\n", "\n").replace("\\\"", "\"").replace("\\'", "'")
-    except:
-        pass
 
     # 2. Busca pela palavra-chave "segments"
     # Procura índices de todas as ocorrências de 'segments'
@@ -460,6 +483,9 @@ def load_transcript(project_folder):
     if not transcript_segments:
         raise ValueError("Could not parse transcript from TSV or SRT.")
 
+    # Defensive ordering: the timestamp-matching and speech-block logic assume
+    # chronological lines; a muxed/edited SRT can arrive out of order.
+    transcript_segments.sort(key=lambda s: float(s.get('start', 0.0) or 0.0))
     return transcript_segments
 
 def _bounded_score(value, default=0.0):
@@ -755,11 +781,18 @@ def _speech_blocks(transcript_segments):
 
 
 def snap_segment_boundaries(start_time, end_time, transcript_segments):
-    """Snap a raw window to the speech block containing it.
+    """Snap BOTH cut points to speech-block edges so cuts never split a word.
 
-    Returns (start, end) aligned to sentence boundaries when the raw window
-    overlaps a detected block; otherwise the raw values are returned
-    unchanged (transcript may be word-level, missing, or AI-only).
+    * Start → the beginning of the speech block containing it (never jumps
+      forward past the hook; a start inside a long pause stays untouched).
+    * End → the end of the speech block containing it (finish the sentence),
+      or the previous block's end when the raw end lands inside a pause
+      (trim the silence instead of cutting the next sentence's first word).
+
+    Previously only the start was snapped — the end could stay mid-word
+    whenever the window was produced by duration clamping or a failed text
+    match. Returns the raw window unchanged when nothing usable overlaps
+    (word-level, missing, or AI-only transcripts).
     """
     start_time = max(0.0, float(start_time))
     end_time = max(start_time + 0.1, float(end_time))
@@ -768,14 +801,39 @@ def snap_segment_boundaries(start_time, end_time, transcript_segments):
     blocks = _speech_blocks(transcript_segments)
     if not blocks:
         return start_time, end_time
+
+    snapped_start = start_time
     for block_start, block_end in blocks:
-        # Window substantially inside this block -> align both edges.
-        if block_start - 0.05 <= start_time <= block_end:
-            return block_start, max(block_end, end_time)
-    # No containing block (window starts inside a long pause or the
-    # transcript has sparse lines). Never jump the start forward past the
-    # hook; keep the raw window so the AI-selected moment is preserved.
-    return start_time, end_time
+        if block_start - 0.05 > start_time:
+            break
+        if start_time <= block_end:
+            snapped_start = block_start
+            break
+
+    snapped_end = end_time
+    prev_block_end = None
+    for block_start, block_end in blocks:
+        if end_time < block_start:
+            # End lands inside a pause: trim back to the sentence that
+            # already finished instead of leaking into the next one.
+            if prev_block_end is not None:
+                snapped_end = prev_block_end
+            break
+        if block_start <= end_time <= block_end:
+            # End lands mid-sentence: extend to the sentence end so the
+            # punchline is complete (the caller rejects snaps that would
+            # violate the max-duration budget).
+            snapped_end = block_end
+            break
+        prev_block_end = block_end
+    else:
+        # End beyond the last spoken word: trim the trailing silence.
+        snapped_end = blocks[-1][1]
+
+    # A snap that destroys the window is worse than no snap at all.
+    if snapped_end <= snapped_start + 0.1:
+        return start_time, end_time
+    return snapped_start, snapped_end
 
 
 def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True):
@@ -791,11 +849,15 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     tempo_minimo = min_duration
     tempo_maximo = max_duration
     
-    # Sort segments by score (descending)
-    try:
-        all_segments.sort(key=lambda x: int(x.get('score', 0)), reverse=True)
-    except:
-        pass
+    # Sort segments by score (descending). Scores arrive as ints, floats OR
+    # numeric strings depending on the AI backend — a single non-int value
+    # used to kill the whole sort silently (bare except around int()).
+    def _sort_score(item):
+        try:
+            return float(item.get('score', 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    all_segments.sort(key=_sort_score, reverse=True)
 
     # --- POST-PROCESSING: Match Text to Timestamps ---
     processed_segments = []
@@ -901,20 +963,31 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             # Validate Duration (Min)
             if duration < tempo_minimo: 
                 print(f"[WARN] Segmento menor que duration min ({duration:.2f}s < {tempo_minimo}s). Estendendo para {tempo_minimo}s.")
-                duration = tempo_minimo
-                final_end_time = final_start_time + duration
+                final_end_time = final_start_time + tempo_minimo
+                if final_end_time > transcript_end_time:
+                    # Never extend past the media: shift the window back so
+                    # the clip still reaches the minimum without ffmpeg
+                    # cutting silence beyond the last spoken word.
+                    final_end_time = transcript_end_time
+                    final_start_time = max(transcript_start_time,
+                                           final_end_time - tempo_minimo)
+                duration = final_end_time - final_start_time
             
             # Validate Duration (Max)
             if duration > tempo_maximo:
                 print(f"[WARN] Segmento excede max duration ({duration:.2f}s > {tempo_maximo}s). Cortando para {tempo_maximo}s.")
-                final_end_time = final_start_time + tempo_maximo
-                duration = tempo_maximo
+                final_end_time = min(final_start_time + tempo_maximo,
+                                     transcript_end_time)
+                duration = final_end_time - final_start_time
 
             # Professional cut refinement: snap both edges to sentence
             # boundaries (transcript pauses) so the clip never starts or
             # ends mid-word. Applied after duration clamping so the
-            # min/max guarantees above are never violated.
-            if snap_to_boundaries:
+            # min/max guarantees above are never violated. Fully explicit
+            # numeric windows from the AI are trusted as-is (the documented
+            # contract): snapping is for text-matched and clamp-adjusted
+            # windows whose edges land mid-sentence.
+            if snap_to_boundaries and not (explicit_start and explicit_end):
                 snapped_start, snapped_end = snap_segment_boundaries(
                     final_start_time, final_end_time, transcript_segments)
                 # Keep the snap only when it stays inside the allowed window.
@@ -930,6 +1003,7 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             hashtags = seg.get('hashtags', [])
             if isinstance(hashtags, str):
                 hashtags = [h.strip().lstrip('#') for h in re.split(r'[,\s]+', hashtags) if h.strip()]
+            recommended = seg.get('recommended_title') or _choose_recommended_title(seg)
             processed_segments.append({
                 "title": seg.get('title', 'Viral Segment'),
                 "start_time": final_start_time,
@@ -951,8 +1025,8 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 # returned them, otherwise fall back to the main title.
                 "alt_titles": seg.get('alt_titles') or [seg.get('title', '')],
                 "alt_captions": seg.get('alt_captions') or [seg.get('caption', '')],
-                "recommended_title": seg.get('recommended_title') or _choose_recommended_title(seg),
-                "title_quality_score": _title_quality_score(seg.get('recommended_title') or _choose_recommended_title(seg)),
+                "recommended_title": recommended,
+                "title_quality_score": _title_quality_score(recommended),
                 "window_fingerprint": _segment_window_fingerprint(final_start_time, final_end_time),
             })
 
@@ -996,7 +1070,8 @@ def segment_titles(segment):
     """A/B test titles for a segment: alt_titles + the main title (Roadmap 5.3).
 
     Returns a de-duplicated list ordered by measured title quality; the
-    strongest candidate first becomes the recommended default.
+    strongest candidate first becomes the recommended default. Ties keep the
+    original order (main title last among equals, preserving legacy output).
     """
     seen, out = set(), []
     for t in list(segment.get("alt_titles") or []) + [segment.get("title", "")]:
@@ -1007,7 +1082,11 @@ def segment_titles(segment):
     if not out:
         return ["Viral Segment"]
     order = {t: i for i, t in enumerate(out)}
-    out.sort(key=lambda t: (order[t], -_title_quality_score(t)))
+    # Sort by quality DESC, original position as the stable tie-breaker.
+    # The old key ``(order[t], -quality)`` was a no-op: order[t] is unique
+    # per title, so the list always came back in insertion order and the
+    # "strongest first" contract never actually held.
+    out.sort(key=lambda t: (-_title_quality_score(t), order[t]))
     return out
 
 
