@@ -1,4 +1,5 @@
 import ast
+import difflib
 import hashlib
 import io
 import json
@@ -468,6 +469,56 @@ def _bounded_score(value, default=0.0):
         return float(default)
 
 
+def _title_content_relevance(title, segment):
+    """Share of the title's words that actually appear in the clip's own text."""
+    content = _normalized_match_text(" ".join([
+        segment.get("start_text", ""),
+        segment.get("end_text", ""),
+        segment.get("caption", ""),
+    ]))
+    title_tokens = set(_normalized_match_text(title).split())
+    if not content or not title_tokens:
+        return 0.0
+    content_tokens = set(content.split())
+    return len(title_tokens & content_tokens) / len(title_tokens)
+
+
+def _normalized_match_text(value):
+    """Lowercase alphanumeric-only text for transcript alignment."""
+    return re.sub(r"[^\w\s]", "", str(value or "").lower()).strip()
+
+
+def _text_similarity(target, source):
+    """Similarity in [0, 1]: containment beats sequence ratio beats token overlap."""
+    if not target or not source:
+        return 0.0
+    if target in source or source in target:
+        return 1.0
+    ratio = difflib.SequenceMatcher(None, target, source).ratio()
+    target_tokens = set(target.split())
+    source_tokens = set(source.split())
+    union = target_tokens | source_tokens
+    overlap = (len(target_tokens & source_tokens) / len(union)) if union else 0.0
+    return max(ratio, overlap)
+
+
+def _title_content_relevance(title, segment):
+    """Fraction of title words that actually appear in the clip's own text.
+
+    Catches titles that are pure bait unrelated to what the segment says.
+    """
+    content = _normalized_match_text(" ".join([
+        segment.get("start_text", ""),
+        segment.get("end_text", ""),
+        segment.get("caption", ""),
+    ]))
+    title_tokens = set(_normalized_match_text(title).split())
+    if not content or not title_tokens:
+        return 0.0
+    content_tokens = set(content.split())
+    return len(title_tokens & content_tokens) / len(title_tokens)
+
+
 def _title_quality_score(title):
     """Small deterministic quality heuristic for title review, not a safety verdict."""
     text = str(title or "").strip()
@@ -523,7 +574,14 @@ def _choose_recommended_title(segment):
             clean.append(value)
     if not clean:
         return "Viral Segment"
-    return max(enumerate(clean), key=lambda item: (_title_quality_score(item[1]), -item[0]))[1]
+
+    def rank(item):
+        index, value = item
+        quality = _title_quality_score(value)
+        relevance = _title_content_relevance(value, segment)
+        return (quality + 12.0 * relevance, -index)
+
+    return max(enumerate(clean), key=rank)[1]
 
 
 def _selection_score(segment, weights=None):
@@ -793,18 +851,25 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 final_start_time = _parse_segment_time(seg.get("start_time"), default=ref_time_val)
                 match_start_idx = start_idx
             else:
-                start_text_target = seg.get('start_text', '').lower().strip()
-                start_text_target = re.sub(r'[^\w\s]', '', start_text_target)
+                # Fuzzy alignment: the AI often paraphrases or slightly alters
+                # the transcript wording, so exact containment fails and the
+                # segment used to fall back to the wrong cut point.
+                start_text_target = _normalized_match_text(seg.get('start_text'))
                 final_start_time = -1
                 match_start_idx = -1
                 search_limit = min(len(transcript_segments), start_idx + 50)
+                best_index, best_similarity = -1, 0.0
                 for i in range(start_idx, search_limit):
-                    s_text = transcript_segments[i]['text'].lower()
-                    s_text = re.sub(r'[^\w\s]', '', s_text)
-                    if start_text_target and (start_text_target in s_text or s_text in start_text_target):
-                        final_start_time = transcript_segments[i]['start']
-                        match_start_idx = i
+                    similarity = _text_similarity(
+                        start_text_target,
+                        _normalized_match_text(transcript_segments[i]['text']))
+                    if similarity > best_similarity:
+                        best_similarity, best_index = similarity, i
+                    if best_similarity >= 0.999:
                         break
+                if start_text_target and best_similarity >= 0.55:
+                    final_start_time = transcript_segments[best_index]['start']
+                    match_start_idx = best_index
                 if final_start_time == -1:
                     final_start_time = transcript_segments[start_idx]['start'] if start_idx < len(transcript_segments) else ref_time_val
                     match_start_idx = start_idx
@@ -813,17 +878,21 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 final_end_time = _parse_segment_time(
                     seg.get("end_time"), default=final_start_time + tempo_minimo)
             else:
-                end_text_target = seg.get('end_text', '').lower().strip()
-                end_text_target = re.sub(r'[^\w\s]', '', end_text_target)
+                end_text_target = _normalized_match_text(seg.get('end_text'))
                 final_end_time = -1
                 if match_start_idx != -1:
                     search_end_limit = min(len(transcript_segments), match_start_idx + 200)
+                    best_index, best_similarity = -1, 0.0
                     for i in range(match_start_idx, search_end_limit):
-                        s_text = transcript_segments[i]['text'].lower()
-                        s_text = re.sub(r'[^\w\s]', '', s_text)
-                        if end_text_target and (end_text_target in s_text or s_text in end_text_target):
-                            final_end_time = transcript_segments[i]['end']
+                        similarity = _text_similarity(
+                            end_text_target,
+                            _normalized_match_text(transcript_segments[i]['text']))
+                        if similarity > best_similarity:
+                            best_similarity, best_index = similarity, i
+                        if best_similarity >= 0.999:
                             break
+                    if end_text_target and best_similarity >= 0.55:
+                        final_end_time = transcript_segments[best_index]['end']
                 if final_end_time == -1:
                     final_end_time = final_start_time + tempo_minimo
 

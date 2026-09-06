@@ -101,3 +101,29 @@ def test_selection_score_rewards_quality_titles():
     assert missing_breakdown["title"] == 60.0
     assert curious_breakdown["title"] == 85.0
     assert "title" in stuffed_breakdown
+
+
+def test_process_segments_aligns_paraphrased_start_text():
+    transcript = [
+        {"start": 0.0, "end": 9.0, "text": "welcome everyone to the show"},
+        {"start": 10.0, "end": 19.0, "text": "the secret ingredient is patience"},
+        {"start": 20.0, "end": 30.0, "text": "thanks for watching"},
+    ]
+    raw = [{
+        "title": "Patience", "start_time_ref": "0s",
+        "start_text": "secret ingredient patience",
+        "end_text": "thanks for watching", "score": 90,
+    }]
+    result = process_segments(raw, transcript, 5, 30)
+    assert result["segments"][0]["start_time"] == 10.0
+
+
+def test_recommended_title_prefers_content_related_candidate():
+    segment = {
+        "title": "لحظة صادمة لن تنساها",
+        "alt_titles": ["السر وراء نجاح القهوة التركية"],
+        "start_text": "لماذا نجاح القهوة التركية يتعلق بالصبر",
+        "end_text": "الصبر هو السر",
+        "caption": "",
+    }
+    assert _choose_recommended_title(segment) == "السر وراء نجاح القهوة التركية"
