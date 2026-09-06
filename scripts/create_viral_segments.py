@@ -530,29 +530,34 @@ def _selection_score(segment, weights=None):
     """Compute a transparent editorial score without hiding the AI score.
 
     The original ``score`` remains untouched. This second score rewards a
-    strong hook, narrative completeness, clarity and novelty, while keeping
-    the model's virality estimate as the largest component. ``weights`` may
-    come from performance_weights.load_weights to nudge components based on
-    measured YouTube outcomes.
+    strong hook, narrative completeness, clarity, novelty and title quality,
+    while keeping the model's virality estimate as the largest component.
+    ``weights`` may come from performance_weights.load_weights to nudge
+    components based on measured YouTube outcomes. A missing title score
+    falls back to the virality estimate so candidates without titles are
+    neither rewarded nor punished.
     """
     if isinstance(weights, dict) and isinstance(weights.get("weights"), dict):
         weights = weights["weights"]
-    weights = weights or {"virality": 0.45, "hook": 0.20, "completeness": 0.20,
-                          "clarity": 0.10, "novelty": 0.05}
+    weights = weights or {"virality": 0.40, "hook": 0.20, "completeness": 0.20,
+                          "clarity": 0.10, "novelty": 0.05, "title": 0.05}
     virality = _bounded_score(segment.get("score"), 0)
     hook = _bounded_score(segment.get("hook_strength"), virality)
     completeness = _bounded_score(segment.get("narrative_completeness"), virality)
     clarity = _bounded_score(segment.get("clarity_score"), virality)
     novelty = _bounded_score(segment.get("novelty_score"), virality)
-    value = (weights["virality"] * virality + weights["hook"] * hook
-             + weights["completeness"] * completeness
-             + weights["clarity"] * clarity + weights["novelty"] * novelty)
+    title = _bounded_score(segment.get("title_quality_score"), virality)
+    value = (weights.get("virality", 0.40) * virality + weights.get("hook", 0.20) * hook
+             + weights.get("completeness", 0.20) * completeness
+             + weights.get("clarity", 0.10) * clarity + weights.get("novelty", 0.05) * novelty
+             + weights.get("title", 0.05) * title)
     return round(max(0.0, min(100.0, value)), 1), {
         "virality": round(virality, 1),
         "hook": round(hook, 1),
         "completeness": round(completeness, 1),
         "clarity": round(clarity, 1),
         "novelty": round(novelty, 1),
+        "title": round(title, 1),
     }
 
 

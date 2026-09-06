@@ -14,8 +14,8 @@ from typing import Any
 
 INSIGHTS_NAME = "performance_insights.json"
 DEFAULT_WEIGHTS = {
-    "virality": 0.45, "hook": 0.20, "completeness": 0.20,
-    "clarity": 0.10, "novelty": 0.05,
+    "virality": 0.40, "hook": 0.20, "completeness": 0.20,
+    "clarity": 0.10, "novelty": 0.05, "title": 0.05,
 }
 MAX_SHIFT = 0.10
 MIN_SAMPLES = 3

@@ -16,7 +16,7 @@ def test_selection_score_is_bounded_and_explainable():
         "novelty_score": 60,
     })
     assert 0 <= score <= 100
-    assert set(breakdown) == {"virality", "hook", "completeness", "clarity", "novelty"}
+    assert set(breakdown) == {"virality", "hook", "completeness", "clarity", "novelty", "title"}
     assert breakdown["virality"] == 90
 
 
@@ -84,3 +84,20 @@ def test_title_quality_penalizes_keyword_stuffing():
     stuffed = _title_quality_score("حرب حرب الكوكايين تطيح تطيح بصناع المحتوى")
     clean = _title_quality_score("كيف تطيح حرب الكوكايين بصناع المحتوى؟")
     assert stuffed < clean
+
+
+def test_selection_score_rewards_quality_titles():
+    base = {"score": 60, "hook_strength": 60, "narrative_completeness": 60,
+            "clarity_score": 60, "novelty_score": 60}
+    stuffed = dict(base, title_quality_score=30.0)
+    curious = dict(base, title_quality_score=85.0)
+    missing = dict(base)
+
+    stuffed_score, stuffed_breakdown = _selection_score(stuffed)
+    curious_score, curious_breakdown = _selection_score(curious)
+    missing_score, missing_breakdown = _selection_score(missing)
+
+    assert curious_score > missing_score > stuffed_score
+    assert missing_breakdown["title"] == 60.0
+    assert curious_breakdown["title"] == 85.0
+    assert "title" in stuffed_breakdown
