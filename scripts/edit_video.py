@@ -17,7 +17,7 @@ except ImportError:
     mp = None
     MEDIAPIPE_AVAILABLE = False
     print("MediaPipe not found. Install with: pip install mediapipe — will fall back to OpenCV Haar Cascade if needed.")
-from scripts.active_speaker import ActiveSpeakerSelector
+from scripts.active_speaker import ActiveSpeakerSelector, audio_activity_change
 from scripts.audio_analysis import get_audio_energy
 from scripts.face_tracker import FaceTracker
 from scripts.media_validation import validate_media_file
@@ -952,22 +952,13 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                          f['mouth_ratio_smooth'] = smoothed_mouth
                          is_talking = smoothed_mouth > active_speaker_mar
                          old_val = faces_activity_state[best_idx]['activity']
-                         change = -abs(active_speaker_decay)
-                         
-                         # Advanced Logic: Combine MAR with Audio Energy
                          current_audio = audio_energies[frame_index] if (audio_energies is not None and frame_index < len(audio_energies)) else 0.0
-                         
-                         # If there is sound, talking is rewarded more. If silence, talking is ignored (likely false positive).
-                         if is_talking:
-                             # Boost talking score if there's actual audio energy
-                             # Heuristic: if energy > 0.1, it's likely real speech
-                             audio_boost = 1.0 + (current_audio * 2.0) # up to 3x boost
-                             change = 1.5 * audio_boost
-                         else:
-                             # If not talking but there's high audio energy, someone else might be speaking
-                             # Decay faster if there's audio but this face isn't moving
-                             if current_audio > 0.3:
-                                 change = -abs(active_speaker_decay) * 1.5
+                         change = audio_activity_change(
+                             is_talking,
+                             current_audio,
+                             active_speaker_decay,
+                             has_audio=audio_energies is not None,
+                         )
                          
                          new_val = old_val + change + motion_bonus
                          # Increased cap to 20.0 to allow motion differences to separate two 'talking' faces
