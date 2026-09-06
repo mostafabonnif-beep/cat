@@ -64,3 +64,19 @@ def test_selector_survives_short_detector_gap():
     selected, switched = selector.select([other], frame_index=3)
     assert selected["_track_id"] == 2
     assert switched is True
+
+
+def test_silent_mouth_movement_does_not_reward_speaker():
+    from scripts.active_speaker import audio_activity_change
+
+    decay = 0.3
+    # Mouth moves while the audio track is silent → gentle decay, no boost.
+    assert audio_activity_change(True, 0.0, decay, has_audio=True) < 0
+    # Real speech with energy → positive boost.
+    assert audio_activity_change(True, 0.4, decay, has_audio=True) > 0
+    # No audio track at all → legacy boost behaviour unchanged.
+    assert audio_activity_change(True, 0.0, decay, has_audio=False) > 0
+    # Not talking while loud audio plays → faster decay than quiet audio.
+    loud = audio_activity_change(False, 0.8, decay, has_audio=True)
+    quiet = audio_activity_change(False, 0.1, decay, has_audio=True)
+    assert loud < quiet < 0

@@ -12,6 +12,30 @@ from typing import Any, Dict, List, Optional, Tuple
 
 Face = Dict[str, Any]
 
+def audio_activity_change(is_talking, audio_level, decay, has_audio=True):
+    """Frame-level activity delta fusing mouth motion with audio energy.
+
+    Pure function so the fusion rules stay unit-testable:
+
+    * talking with real audio energy → boost up to 3x with the loudness;
+    * talking while the audio is silent → gentle decay (mouth moving
+      without sound is laughing/reacting, not speaking — this stops a
+      silent reactor from stealing the crop from the real speaker);
+    * silent mouth with no audio track at all → legacy boost behaviour
+      unchanged (we cannot know whether the audio is silent);
+    * not talking while loud audio plays → faster decay (someone else is
+      probably speaking);
+    * not talking otherwise → the plain decay.
+    """
+    magnitude = abs(float(decay))
+    if is_talking:
+        if has_audio and float(audio_level) < 0.05:
+            return -magnitude * 0.5
+        return 1.5 * (1.0 + (float(audio_level) * 2.0))
+    if has_audio and float(audio_level) > 0.3:
+        return -magnitude * 1.5
+    return -magnitude
+
 
 class ActiveSpeakerSelector:
     """Select one face over time with identity-aware hysteresis."""
