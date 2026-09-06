@@ -469,20 +469,6 @@ def _bounded_score(value, default=0.0):
         return float(default)
 
 
-def _title_content_relevance(title, segment):
-    """Share of the title's words that actually appear in the clip's own text."""
-    content = _normalized_match_text(" ".join([
-        segment.get("start_text", ""),
-        segment.get("end_text", ""),
-        segment.get("caption", ""),
-    ]))
-    title_tokens = set(_normalized_match_text(title).split())
-    if not content or not title_tokens:
-        return 0.0
-    content_tokens = set(content.split())
-    return len(title_tokens & content_tokens) / len(title_tokens)
-
-
 def _normalized_match_text(value):
     """Lowercase alphanumeric-only text for transcript alignment."""
     return re.sub(r"[^\w\s]", "", str(value or "").lower()).strip()
@@ -813,6 +799,10 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
 
     # --- POST-PROCESSING: Match Text to Timestamps ---
     processed_segments = []
+    transcript_start_time = min(float(item.get("start", 0.0)) for item in transcript_segments)
+    transcript_end_time = max(float(item.get("end", item.get("start", 0.0))) for item in transcript_segments)
+    if transcript_end_time <= transcript_start_time:
+        raise ValueError("Transcript timestamps must contain a positive duration.")
     
     print(f"[DEBUG] Matching {len(all_segments)} raw segments to timestamps...")
     
@@ -895,6 +885,15 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                         final_end_time = transcript_segments[best_index]['end']
                 if final_end_time == -1:
                     final_end_time = final_start_time + tempo_minimo
+
+            # Keep explicit or text-matched windows inside the actual transcript.
+            # This prevents malformed AI timestamps from producing empty or out-of-range clips.
+            raw_start_time = float(final_start_time)
+            if raw_start_time > transcript_end_time:
+                final_start_time = max(transcript_start_time, transcript_end_time - tempo_minimo)
+            else:
+                final_start_time = min(max(raw_start_time, transcript_start_time), transcript_end_time)
+            final_end_time = min(max(float(final_end_time), final_start_time + 0.1), transcript_end_time)
 
             # Calculate Duration
             duration = final_end_time - final_start_time

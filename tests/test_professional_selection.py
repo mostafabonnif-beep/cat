@@ -127,3 +127,19 @@ def test_recommended_title_prefers_content_related_candidate():
         "caption": "",
     }
     assert _choose_recommended_title(segment) == "السر وراء نجاح القهوة التركية"
+
+
+def test_process_segments_clamps_malformed_ai_timestamps_to_transcript():
+    transcript = [
+        {"start": 0.0, "end": 8.0, "text": "opening"},
+        {"start": 9.0, "end": 20.0, "text": "complete thought"},
+    ]
+    result = process_segments([{
+        "title": "Out of range",
+        "start_time": 9999,
+        "end_time": 10000,
+        "score": 90,
+    }], transcript, 5, 30)
+    segment = result["segments"][0]
+    assert 0.0 <= segment["start_time"] < segment["end_time"] <= 20.0
+    assert 5.0 <= segment["duration"] <= 30.0
