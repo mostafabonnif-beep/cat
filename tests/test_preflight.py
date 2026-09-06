@@ -469,3 +469,16 @@ def test_check_telegram_config_missing_allowlist_hides_token():
     assert result["status"] == preflight.WARN
     assert "Chat ID" in result["detail"]
     assert token not in result["detail"]
+
+
+def test_legacy_gemini_import_check_uses_metadata_without_import(monkeypatch):
+    imported = []
+
+    def fake_import(module):
+        imported.append(module)
+        raise AssertionError("legacy Gemini SDK should not be imported during preflight")
+
+    monkeypatch.setattr(preflight.importlib, "import_module", fake_import)
+    monkeypatch.setattr(preflight, "_dist_installed", lambda dist: dist == "google-generativeai")
+    assert preflight._module_importable("google.generativeai") is True
+    assert imported == []

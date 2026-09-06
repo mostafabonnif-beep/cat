@@ -203,6 +203,11 @@ def _dist_installed(dist):
 
 
 def _module_importable(module):
+    # The legacy Gemini SDK emits a deprecation warning at import time. Check
+    # its distribution metadata instead; the modern google-genai SDK is used
+    # by default and the legacy package remains a silent compatibility fallback.
+    if module == "google.generativeai":
+        return _dist_installed("google-generativeai")
     try:
         importlib.import_module(module)
         return True
