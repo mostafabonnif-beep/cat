@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - depends on environment
     yt_dlp = None
 
 from i18n.i18n import I18nAuto
+from scripts.ffmpeg_toolchain import FFMPEG_BROKEN_GUIDANCE, resolve_toolchain
 
 i18n = I18nAuto()
 
@@ -61,6 +62,9 @@ def _friendly_download_error(e, url=""):
                 + "  Deno: install it and ensure deno.exe is in PATH.")
     if "is not a valid url" in low:
         return i18n("\n[ERROR] The link is not a valid YouTube URL.")
+    if "ffmpeg is not installed" in low:
+        return (i18n("\n[ERROR] yt-dlp could not run ffmpeg even though it was found on PATH.\n")
+                + "  " + FFMPEG_BROKEN_GUIDANCE)
     if "unable to download video subtitles" in low or "429" in low:
         return None  # handled by the retry-without-subs branch
     if "403" in msg or "forbidden" in low:
@@ -337,6 +341,23 @@ def download(url, base_root="VIRALS", download_subs=True, quality="best",
         'cookiefile': cookies_file or None,
     }
     ydl_opts.update(_runtime_options())
+
+    # v7.32.2: yt-dlp verifies ffmpeg by EXECUTING it, not just by PATH
+    # lookup. A broken binary on PATH (lone ffmpeg.exe without its DLLs, a
+    # classic C:\Windows\system32 shadow) passes existence checks but kills
+    # every merged download with "ffmpeg is not installed". Verify here,
+    # rescue a working copy from a sibling install, or fail with guidance.
+    toolchain = resolve_toolchain()
+    if not toolchain["ok"]:
+        print(i18n("\n[ERROR] ffmpeg/ffprobe problem: {}").format("; ".join(toolchain["problems"])))
+        print("  " + FFMPEG_BROKEN_GUIDANCE)
+        raise SystemExit(1)
+    rescued = {n: p for n, p in toolchain["programs"].items() if p["state"] == "rescued"}
+    if rescued:
+        for name, info in rescued.items():
+            print(i18n("[ffmpeg] PATH copy is broken/missing — using verified {} from {}")
+                  .format(name, info["path"]))
+        ydl_opts["ffmpeg_location"] = toolchain["location"]
 
     try:
         print(i18n("Downloading video to: {}...").format(project_folder))

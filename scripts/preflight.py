@@ -248,6 +248,40 @@ def check_binary(name, critical=True):
             "detail": "not found on PATH"}
 
 
+def check_ffmpeg_toolchain():
+    """ffmpeg/ffprobe checks that verify the binaries actually RUN.
+
+    yt-dlp (2025+) executes ``ffmpeg -bsfs`` and requires parseable version
+    output before any merge; an existence-only check lets a broken PATH copy
+    (lone ffmpeg.exe without DLLs shadowing a healthy install) through and
+    every download dies later with "ffmpeg is not installed".
+    """
+    try:
+        from scripts.ffmpeg_toolchain import resolve_toolchain
+    except Exception:  # pragma: no cover - defensive
+        return [check_binary("ffmpeg", critical=True),
+                check_binary("ffprobe", critical=True)]
+    tc = resolve_toolchain()
+    entries = []
+    for name in ("ffmpeg", "ffprobe"):
+        info = tc["programs"][name]
+        state, path = info["state"], info["path"]
+        if state == "ok":
+            entries.append({"name": name, "status": OK, "detail": path})
+        elif state == "rescued":
+            entries.append({"name": name, "status": WARN,
+                            "detail": "PATH copy broken/missing - using verified %s "
+                                      "(fix the broken PATH entry when convenient)" % path})
+        elif state == "broken":
+            entries.append({"name": name, "status": FAIL,
+                            "detail": "found at %s but it does not run (corrupt or missing "
+                                      "DLLs) - delete it or reinstall full ffmpeg "
+                                      "(winget install ffmpeg)" % path})
+        else:
+            entries.append({"name": name, "status": FAIL, "detail": "not found on PATH"})
+    return entries
+
+
 def check_bundled_binary(name):
     """Frozen exe: tools live in sys._MEIPASS - check there first."""
     if not _is_frozen():
@@ -554,8 +588,7 @@ def ensure_api_config():
 # --------------------------------------------------------------------------
 def collect_checks():
     """Run every check. Returns (checks, critical_names, warn_names)."""
-    checks = [check_python(), check_binary("ffmpeg", critical=True),
-              check_binary("ffprobe", critical=True)]
+    checks = [check_python()] + check_ffmpeg_toolchain()
     bundled = check_bundled_binary("ffmpeg")
     if bundled:
         checks.append(bundled)
