@@ -38,6 +38,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from scripts import content_guard
 from scripts.metadata_compliance import check_metadata, summarize_metadata
+from scripts.title_text import fit_publish_title
 
 PUBLISH_BLOCKLIST = "publish_blocklist.json"
 SAFETY_REPORT = "safety_report.json"
@@ -674,7 +675,9 @@ class YouTubeUploader(_BaseUploader):
             status["publishAt"] = normalized_publish_at
         body = {
             "snippet": {
-                "title": (title or "").strip()[:100],
+                # YouTube hard-caps titles at 100 chars; fit_publish_title keeps
+                # the break on a word boundary (never a silent mid-word slice).
+                "title": fit_publish_title(title, 100),
                 "description": description[:5000],
                 "tags": tags,
                 "categoryId": os.getenv("YT_CATEGORY_ID", "22"),  # 22 = People & Blogs
@@ -1137,7 +1140,9 @@ class TikTokUploader(_BaseUploader):
             raise ValueError("video file is empty: {}".format(video_path))
 
         headers = {"Authorization": "Bearer {}".format(access_token)}
-        display_title = (title or caption or "ViralCutter clip")[:150]
+        # TikTok's Content Posting API caps post_info.title at 150 chars; fit
+        # on a word boundary instead of a silent hard slice.
+        display_title = fit_publish_title(title or caption or "ViralCutter clip", 150)
         init_payload = {
             "post_info": {
                 "title": display_title,

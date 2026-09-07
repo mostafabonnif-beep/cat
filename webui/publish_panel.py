@@ -257,6 +257,16 @@ def run_music_check(project_path, local_db_path=""):
 # Upload through the safety gate (streaming)
 # ---------------------------------------------------------------------------
 
+# Publish-title character caps per platform, used when a batch clip has no
+# segment suggestion and its publish title must be derived from the filename.
+# YouTube hard-caps titles at 100 chars; TikTok's Content Posting API caps
+# post_info.title at 150. Unknown platforms default to the YouTube cap.
+_PUBLISH_TITLE_LIMITS = {"youtube": 100, "tiktok": 150}
+
+
+def _title_limit_for_platform(platform):
+    return _PUBLISH_TITLE_LIMITS.get(str(platform or "").strip().lower(), 100)
+
 
 def _publish_result(status, video_path, title="", publish_at=None, **extra):
     result = {
@@ -591,7 +601,13 @@ def stream_upload_batch(project_path, platform, video_paths, dry_run, music_gate
             schedule_start.isoformat(), int(interval) if interval.is_integer() else interval, len(paths))
     for number, path in enumerate(paths, 1):
         title, caption = clip_suggestion(project_path, path)
-        title = title or os.path.splitext(os.path.basename(path))[0][:100]
+        if not title:
+            # Filename-derived fallback title. The file itself is untouched;
+            # only the *title text* is fitted to the platform cap so a long
+            # clip name never ships as a mid-word-split publish title.
+            from scripts.title_text import fit_publish_title
+            stem = os.path.splitext(os.path.basename(path))[0]
+            title = fit_publish_title(stem, _title_limit_for_platform(platform))
         yield "\n[upload] ({}/{}) {}".format(number, len(paths), os.path.basename(path))
         item_publish_at = None
         if schedule_start:

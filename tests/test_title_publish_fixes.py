@@ -3,11 +3,14 @@
 
 Covers:
 * scripts/title_text helpers (script detection, scripts_match, emoji
-  counting / strip_excess_emoji)
+  counting / strip_excess_emoji, fit_publish_title word-boundary fitting)
 * Arabic clickbait & engagement-bait rules in metadata_compliance
 * title/caption language-mismatch and excessive-emoji findings (metadata axis)
 * upload_gate.effective_title and the audit that vets the shipped
   recommended_title instead of the raw stored title
+* wiring: the final upload/clipboard publish titles (YouTube request body via
+  upload_gate, batch filename-fallback via publish_panel) go through
+  fit_publish_title instead of a silent [:100] slice
 """
 
 import json
@@ -290,3 +293,243 @@ class TestAuditVetsShippedTitle:
         assert allowed == [0]
         assert len(blocked) == 1
         assert blocked[0]["index"] == 1
+
+
+# ---------------------------------------------------------------------------
+# title_text: fit_publish_title — word-boundary fitting for platform caps
+# ---------------------------------------------------------------------------
+
+ELLIPSIS = tt.ELLIPSIS  # "\u2026" — single-char ellipsis used by the fitter
+
+
+class TestFitPublishTitle:
+    def test_short_title_unchanged_no_ellipsis(self):
+        assert tt.fit_publish_title("Short title") == "Short title"
+        assert tt.fit_publish_title("Another very normal title") == \
+            "Another very normal title"
+
+    def test_exactly_at_limit_unchanged(self):
+        text = "a" * 100
+        assert tt.fit_publish_title(text) == text
+        assert tt.fit_publish_title("ab cd", 5) == "ab cd"
+
+    def test_trims_input_first(self):
+        assert tt.fit_publish_title("  padded  ") == "padded"
+        # padding does not count toward the budget and never triggers '…'
+        # (trimmed length 5 fits inside the limit)
+        assert tt.fit_publish_title("  short  ", 10) == "short"
+
+    def test_long_title_cut_at_last_word_boundary(self):
+        # 11 words of 10 chars → 120 chars; last whitespace at/before 99 is
+        # index 98, so the fit keeps 9 whole words (98 chars) + '…' = 99.
+        title = " ".join(["abcdefghij"] * 11)
+        assert len(title) == 120
+        result = tt.fit_publish_title(title)
+        assert result == title[:98] + ELLIPSIS
+        assert result.endswith(ELLIPSIS)
+        assert len(result) == 99 <= 100
+        assert result[:-1] == title[:98]      # pure prefix, no word split
+        assert title[len(result) - 1] == " "  # the cut landed on a space
+
+    def test_boundary_whitespace_at_limit_minus_one(self):
+        # Space sits exactly at limit-1 (index 2): the whole first word fits.
+        assert tt.fit_publish_title("ab cd", 3) == "ab" + ELLIPSIS
+        assert len(tt.fit_publish_title("ab cd", 3)) == 3
+        # Consecutive spaces never leave a dangling space before '…'.
+        result = tt.fit_publish_title("aa bb   cc dd", 8)
+        assert result.endswith(ELLIPSIS)
+        assert not result[:-1].endswith(" ")
+        assert len(result) <= 8
+
+    def test_single_long_token_hard_cut(self):
+        # 60-char token, no whitespace → hard cut at limit-1 (49) + '…'.
+        token = "abcdefghij" * 6
+        result = tt.fit_publish_title(token, 50)
+        assert result == token[:49] + ELLIPSIS
+        assert len(result) == 50
+
+    def test_arabic_title_cuts_at_arabic_word_boundary(self):
+        # 40 Arabic words of 4 letters → 199 chars; the space at index 99
+        # (== limit-1) is a legal boundary, so 20 whole words survive.
+        title = " ".join(["كلمة"] * 40)
+        assert tt.is_arabic_script(title)
+        result = tt.fit_publish_title(title)
+        assert len(result) == 100
+        assert result == title[:99] + ELLIPSIS
+        assert result.endswith(ELLIPSIS)
+        # the kept text ends with a complete Arabic word (letter, not space)
+        assert tt.is_arabic_script(result[:-1][-4:])
+        assert tt.detect_text_script(result[:-1]) == "ar"
+
+    def test_zwsp_is_a_word_boundary(self):
+        # ZWSP (U+200B) is used as an invisible word separator (Arabic social
+        # titles). Python's re \s does NOT match it, so the fitter extends the
+        # whitespace class explicitly; a ZWSP-joined phrase must never be cut
+        # mid-"word". 11 ZWSP-joined 10-char segments → cut after segment 8.
+        title = "\u200b".join(["abcdefghij"] * 11)
+        result = tt.fit_publish_title(title)
+        assert len(result) == 99
+        assert result == title[:98] + ELLIPSIS
+        assert title[len(result) - 1] == "\u200b"
+
+    def test_none_and_empty(self):
+        assert tt.fit_publish_title(None) == ""
+        assert tt.fit_publish_title("") == ""
+        assert tt.fit_publish_title("   ") == ""  # whitespace-only input
+
+    def test_non_positive_limit_returns_empty(self):
+        assert tt.fit_publish_title("some title", 0) == ""
+        assert tt.fit_publish_title("some title", -5) == ""
+        assert tt.fit_publish_title(None, 0) == ""
+
+
+# ---------------------------------------------------------------------------
+# Wiring: final publish titles go through fit_publish_title (no silent slices)
+# ---------------------------------------------------------------------------
+
+class TestPublishTitleWiring:
+    def test_youtube_request_title_fitted_at_100(self, tmp_path, monkeypatch):
+        """upload_gate.YouTubeUploader builds snippet.title via fit_publish_title.
+
+        Mirrors tests/test_upload_gate.py's fake-google setup: the request
+        body is captured before any real SDK/network call happens.
+        """
+        import sys as _sys
+
+        from scripts import upload_gate as ug
+
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"fake video bytes")
+        captured = {}
+
+        class FakeCreds:
+            valid = True
+
+        class FakeMedia:
+            def __init__(self, path, chunksize, resumable):
+                captured["media_path"] = path
+
+        class FakeRequest:
+            def next_chunk(self):
+                return None, {"id": "WIRED1", "status": "uploaded"}
+
+        class FakeVideos:
+            def insert(self, part, body, media_body):
+                captured["body"] = body
+                return FakeRequest()
+
+        class FakeService:
+            def videos(self):
+                return FakeVideos()
+
+        fake_discovery = type(_sys)("googleapiclient.discovery")
+        fake_discovery.build = lambda *a, **k: FakeService()
+        fake_http = type(_sys)("googleapiclient.http")
+        fake_http.MediaFileUpload = FakeMedia
+        monkeypatch.setitem(_sys.modules, "googleapiclient.discovery", fake_discovery)
+        monkeypatch.setitem(_sys.modules, "googleapiclient.http", fake_http)
+        monkeypatch.setenv("YT_PRIVACY", "unlisted")
+
+        uploader = ug.YouTubeUploader(str(tmp_path), dry_run=False)
+        monkeypatch.setattr(uploader, "_load_or_create_token", lambda: FakeCreds())
+
+        long_title = " ".join(["abcdefghij"] * 11)  # 120 chars > YouTube cap
+        result = uploader.upload(str(video), long_title, "cap", [], index=0)
+        assert result["status"] == "uploaded"
+        shipped = captured["body"]["snippet"]["title"]
+        assert shipped == tt.fit_publish_title(long_title, 100)
+        assert shipped == long_title[:98] + ELLIPSIS
+        assert len(shipped) <= 100
+        assert shipped.endswith(ELLIPSIS)
+
+        # Short titles are never touched by the upload path. Use distinct
+        # video content: the content-guard registry fingerprints published
+        # files and refuses to republish the same bytes twice.
+        video2 = tmp_path / "clip2.mp4"
+        video2.write_bytes(b"different video bytes")
+        result = uploader.upload(str(video2), "My Title", "cap", [], index=0)
+        assert captured["body"]["snippet"]["title"] == "My Title"
+
+    def test_publish_panel_batch_filename_fallback_is_fitted(self, tmp_path, monkeypatch):
+        """Batch clips without a segment suggestion get a word-boundary title.
+
+        stream_upload_batch derives the fallback publish title from the
+        filename; that title must be fitted to the platform cap (default 100)
+        instead of a raw [:100] slice of the filename.
+        """
+        from webui import publish_panel as pp
+
+        project = str(tmp_path / "proj")
+        os.makedirs(project, exist_ok=True)
+        # Stem longer than 100 chars with real word boundaries; >99 chars is
+        # enough to force truncation and words are 18 chars so the cut lands
+        # cleanly between words (no viral_segments.txt → filename fallback).
+        stem = "long segment name " * 10  # 180 chars
+        assert len(stem) > 100
+        clip_path = os.path.join(project, stem + ".mp4")
+        with open(clip_path, "wb") as stream:
+            stream.write(b"clip")
+
+        captured = {}
+
+        def fake_stream_upload(*args, **kwargs):
+            captured["title"] = args[3]
+            captured["platform"] = args[1]
+            yield "done"
+            return pp._publish_result("uploaded", args[2], args[3])
+
+        monkeypatch.setattr(pp, "stream_upload", fake_stream_upload)
+        updates = list(pp.stream_upload_batch(project, "youtube", [clip_path],
+                                              True, "warn"))
+        assert captured["platform"] == "youtube"
+        assert captured["title"] == tt.fit_publish_title(stem, 100)
+        assert captured["title"].endswith(ELLIPSIS)
+        assert len(captured["title"]) <= 100
+        assert any("اكتمل رفع/جدولة كل الملفات" in item for item in updates)
+
+    def test_publish_panel_batch_keys_limit_on_platform(self, tmp_path, monkeypatch):
+        """The same shared batch path uses TikTok's 150 cap for TikTok clips."""
+        from webui import publish_panel as pp
+
+        project = str(tmp_path / "proj")
+        os.makedirs(project, exist_ok=True)
+        stem = "long segment name " * 10
+        clip_path = os.path.join(project, stem + ".mp4")
+        with open(clip_path, "wb") as stream:
+            stream.write(b"clip")
+        captured = {}
+
+        def fake_stream_upload(*args, **kwargs):
+            captured["title"] = args[3]
+            yield "done"
+            return pp._publish_result("uploaded", args[2], args[3])
+
+        monkeypatch.setattr(pp, "stream_upload", fake_stream_upload)
+        list(pp.stream_upload_batch(project, "tiktok", [clip_path], True, "warn"))
+        assert captured["title"] == tt.fit_publish_title(stem, 150)
+        assert len(captured["title"]) <= 150
+
+    def test_publish_panel_short_suggestion_passes_through(self, tmp_path, monkeypatch):
+        """Existing suggested titles are not truncated by the batch path."""
+        from webui import publish_panel as pp
+
+        project = str(tmp_path / "proj")
+        final_dir = os.path.join(project, "final")
+        os.makedirs(final_dir, exist_ok=True)
+        with open(os.path.join(project, "viral_segments.txt"), "w", encoding="utf-8") as f:
+            json.dump({"segments": [{"title": "Clean Short Title",
+                                     "recommended_title": "Clean Short Title",
+                                     "caption": ""}]}, f, ensure_ascii=False)
+        clip_path = os.path.join(final_dir, "000_clip.mp4")
+        with open(clip_path, "wb") as stream:
+            stream.write(b"clip")
+        captured = {}
+
+        def fake_stream_upload(*args, **kwargs):
+            captured["title"] = args[3]
+            yield "done"
+            return pp._publish_result("uploaded", args[2], args[3])
+
+        monkeypatch.setattr(pp, "stream_upload", fake_stream_upload)
+        list(pp.stream_upload_batch(project, "youtube", [clip_path], True, "warn"))
+        assert captured["title"] == "Clean Short Title"

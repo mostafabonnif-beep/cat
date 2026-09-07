@@ -780,8 +780,15 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     smoothed_slots = 0  # how many face slots were smoothed last frame (v7.27)
     # Identity tracker (v7.28): keeps per-face IDs across detection cycles so
     # crop slots never swap people after a brief disappearance / gap.
+    # max_missing_frames: identity must survive ~5s of real video time
+    # regardless of the detection cadence (1-face / 2-face / grace
+    # re-checks), so a speaker turning away or briefly occluded is
+    # re-acquired with the same ID instead of being re-spawned after ~1s in
+    # 1-face mode (where 6 cycles only cover ~1s of video). fps is read at
+    # the top of this function (cap.get(cv2.CAP_PROP_FPS)).
     face_tracker = FaceTracker(match_gate=0.45, max_missing_cycles=6,
-                               velocity_alpha=0.4)
+                               velocity_alpha=0.4,
+                               max_missing_frames=int(5.0 * fps))
     # Auto-mode face-count grace (v7.27): a 2-face layout survives brief
     # detection blips (2 quick re-detect cycles ~0.2s apart) instead of
     # popping to 1 face and back.

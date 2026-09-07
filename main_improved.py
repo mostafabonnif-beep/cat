@@ -19,6 +19,7 @@ warnings.filterwarnings("ignore")
 
 import argparse
 import atexit
+import hashlib
 import json
 import shutil
 import time
@@ -167,6 +168,28 @@ def parse_face_detect_interval(raw_value):
     except (ValueError, IndexError):
         debug(f"Invalid face detection interval value: {raw_value}")
     return None
+
+
+def _segment_settings_fingerprint(args):
+    """Deterministic fingerprint of the segment-generation settings (v7.32).
+
+    Stored as ``source_meta.config_fp`` next to the source-video fingerprint
+    whenever viral segments are saved. The ``--skip-prompts`` reuse check
+    compares it before loading: windows chosen for the OLD min/max duration,
+    chunk size, language or count must not be reused after the user changes
+    those settings. Built ONLY from argparse values so the pre-prompts reuse
+    check and the post-generation save compute the identical payload.
+    """
+    payload = {
+        "segments": getattr(args, "segments", None),
+        "min_duration": getattr(args, "min_duration", None),
+        "max_duration": getattr(args, "max_duration", None),
+        "chunk_size": getattr(args, "chunk_size", None),
+        "title_language": getattr(args, "title_language", None),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                     separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 atexit.register(cleanup_temp_files)
 #
@@ -946,16 +969,23 @@ def main():
                 use_existing_json = 'no'
                 print(i18n("Existing segments count ({}) differs from requested count ({}); generating fresh segments.").format(existing_count, requested_count_hint))
             elif args.skip_prompts:
-                # v7.31 staleness guard: segments saved from a DIFFERENT input
-                # video (changed size/mtime) must not be cut against the new
-                # footage. When the file carries a source fingerprint that no
-                # longer matches, force regeneration instead of silent reuse.
+                # v7.31/v7.32 staleness guards: reuse of saved segments is only
+                # safe when BOTH the input video AND the segment-generation
+                # settings are unchanged. A different video (size/mtime) or
+                # changed settings (count/min/max/chunk/language) means the old
+                # AI windows no longer match this run — force regeneration
+                # instead of silently cutting stale moments.
                 stored_fp = create_viral_segments.segments_source_fingerprint(existing_data)
                 current_fp = (create_viral_segments.source_video_fingerprint(input_video)
                               if input_video else None)
+                stored_cfg = ((existing_data or {}).get("source_meta", {}) or {}).get("config_fp")
+                current_cfg = _segment_settings_fingerprint(args)
                 if stored_fp and current_fp and stored_fp != current_fp:
                     use_existing_json = 'no'
                     print(i18n("Input video changed since these segments were generated; regenerating segments."))
+                elif stored_cfg and stored_cfg != current_cfg:
+                    use_existing_json = 'no'
+                    print(i18n("Segment settings changed since these segments were generated; regenerating segments."))
                 else:
                     use_existing_json = 'yes'
             else:
@@ -1410,14 +1440,16 @@ def main():
                     print(i18n("Stopping execution."))
                     sys.exit(1)
                 
-                # v7.31: record which source video produced these segments so
-                # a later run on a different file detects staleness instead of
-                # reusing old AI windows against new footage. (Every later
-                # dict() copy in the pipeline preserves this top-level key.)
+                # v7.31/v7.32: record which source video AND which settings
+                # produced these segments, so a later run with a different
+                # file or changed settings detects staleness instead of
+                # reusing old AI windows. (Every later dict() copy in the
+                # pipeline preserves this top-level key.)
                 if isinstance(viral_segments, dict) and input_video:
                     _source_fp = create_viral_segments.source_video_fingerprint(input_video)
                     if _source_fp:
                         viral_segments.setdefault("source_meta", {})["source_video_fp"] = _source_fp
+                    viral_segments.setdefault("source_meta", {})["config_fp"] = _segment_settings_fingerprint(args)
                 save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
 
         # 3.5. Fix Raw Segments (missing timestamps)
@@ -1443,11 +1475,13 @@ def main():
                               output_count=None 
                           )
                           # process_segments returns a fresh dict: re-stamp the
-                          # source fingerprint before persisting (v7.31).
+                          # source + settings fingerprints before persisting
+                          # (v7.31/v7.32).
                           if isinstance(viral_segments, dict) and input_video:
                               _source_fp = create_viral_segments.source_video_fingerprint(input_video)
                               if _source_fp:
                                   viral_segments.setdefault("source_meta", {})["source_video_fp"] = _source_fp
+                              viral_segments.setdefault("source_meta", {})["config_fp"] = _segment_settings_fingerprint(args)
                           save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
                           print(i18n("Segments aligned and saved."))
                       except Exception as e:

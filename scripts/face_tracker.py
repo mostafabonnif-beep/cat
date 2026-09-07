@@ -14,6 +14,11 @@ This module adds stable per-face IDs with:
   its predicted position instead of being mistaken for a brand-new person;
 * a missing-cycle lifecycle (tracks die after ``max_missing_cycles`` without
   a detection, new faces spawn fresh tracks);
+* an optional video-time lifetime (``max_missing_frames``): when set, a track
+  also dies once more than that many real VIDEO FRAMES have elapsed since its
+  last sighting, no matter how many detection cycles that spans — identity
+  survival then stays constant across detection cadences (5-frame 1-face
+  cycles vs ~1s 2-face cycles vs ~0.2s grace re-checks);
 * deterministic ordering: matched tracks are returned sorted by ID, so slot 0
   of the crop layout always means "the same person".
 
@@ -84,14 +89,32 @@ class FaceTracker:
     max_missing_cycles:
         A track that receives no detection for this many consecutive
         ``update()`` calls is dropped; a returning face then gets a new ID.
+    max_missing_frames:
+        Optional video-time survival limit (fps-aware). When set, a track
+        dies as soon as ``(current frame_index - track.last_frame) >
+        max_missing_frames`` — i.e. after that many real video frames without
+        a sighting, regardless of how many (or how few) detection cycles that
+        took. When None (the default) the legacy per-cycle behaviour above is
+        unchanged. The two limits are independent and ORed together: with
+        this set, a track can survive far more missed ``update()`` calls than
+        ``max_missing_cycles`` would allow as long as the elapsed video time
+        stays inside ``max_missing_frames`` (and vice versa). edit_video's
+        double ``update()`` per detection cycle (same frame_index twice: the
+        pre-lookahead identities pass and the authoritative pass) is safe:
+        a track matched on the first call has ``last_frame == frame_index``
+        on the second, so the frame gap is 0 and it is never aged twice.
     velocity_alpha:
         EMA factor for the per-track velocity estimate (0 = no prediction).
     """
 
     def __init__(self, match_gate: float = 0.35,
-                 max_missing_cycles: int = 3, velocity_alpha: float = 0.4):
+                 max_missing_cycles: int = 3, velocity_alpha: float = 0.4,
+                 max_missing_frames: Optional[int] = None):
         self.match_gate = max(0.01, float(match_gate))
         self.max_missing_cycles = max(0, int(max_missing_cycles))
+        self.max_missing_frames = (
+            None if max_missing_frames is None
+            else max(0, int(max_missing_frames)))
         self.velocity_alpha = max(0.0, min(0.95, float(velocity_alpha)))
         self._tracks = {}  # id -> _Track
         self._next_id = 0
@@ -167,7 +190,20 @@ class FaceTracker:
         for tid, track in self._tracks.items():
             if track.last_frame < self.frame_index:
                 track.missing_cycles += 1
-            if track.missing_cycles > self.max_missing_cycles:
+            # Video-time death (max_missing_frames set): a track also dies on
+            # elapsed FRAMES since its last sighting, so identity lifetime is
+            # cadence-independent (5-frame 1-face cycles, ~1s 2-face cycles,
+            # ~0.2s grace re-checks all give the same seconds of survival).
+            # edit_video calls update() twice per cycle at the same
+            # frame_index (pre-lookahead identities + authoritative update);
+            # the frame-gap rule naturally ignores that second call because
+            # a track matched on the first call has last_frame == frame_index
+            # (gap 0), so it is not aged twice and cannot die early here.
+            frame_gap_dead = (
+                self.max_missing_frames is not None
+                and (self.frame_index - track.last_frame) > self.max_missing_frames
+            )
+            if frame_gap_dead or track.missing_cycles > self.max_missing_cycles:
                 dead.append(tid)
         for tid in dead:
             del self._tracks[tid]

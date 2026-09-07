@@ -16,6 +16,8 @@ Public API
                                       for publishing (mixed tolerated, empty OK)
 * ``count_emoji(text)``             — emoji code points (conservative ranges)
 * ``strip_excess_emoji(text, max_emoji=1)`` — drop emoji past the budget
+* ``fit_publish_title(text, limit=100)`` — longest word-boundary prefix of a
+  publish title that fits `limit` chars, with a trailing '…' on truncation
 """
 
 import re
@@ -138,3 +140,68 @@ def strip_excess_emoji(text, max_emoji=1):
             seen += 1
         kept.append(char)
     return "".join(kept)
+
+
+# ---------------------------------------------------------------------------
+# Publish-title length fitting
+# ---------------------------------------------------------------------------
+
+# "…" — single HORIZONTAL ELLIPSIS char (U+2026), one code point. Deliberately
+# NOT three ASCII dots: they would cost 3 of the budget and look worse.
+ELLIPSIS = "\u2026"
+
+# Word separator for publish titles. Python's re `\s` matches the Unicode
+# White_Space property, which does NOT include U+200B (ZERO WIDTH SPACE,
+# category Cf) — yet ZWSP is used in the wild (Arabic social titles
+# especially) as an invisible word separator. We extend the class explicitly
+# so a ZWSP-joined phrase is treated as separate words, never hard-cut in
+# half. U+200C/U+200D (ZWNJ/ZWJ) are glue characters, not separators, and are
+# deliberately left out.
+_TITLE_WS_RE = re.compile(r"[\s\u200B]+")
+
+
+def fit_publish_title(text, limit=100):
+    """Longest prefix of `text` that fits `limit` characters on a word boundary.
+
+    YouTube caps titles at 100 characters and truncates silently; this helper
+    is the single place where publish titles are shortened, so every platform
+    path truncates the same way: never in the middle of a word.
+
+    Rules
+    -----
+    * ``None`` → ``""``; whitespace is trimmed from both ends first.
+    * ``len(text) <= limit`` → returned unchanged (never appends '…').
+    * Otherwise the string is cut at the last whitespace boundary at or before
+      ``limit - 1`` (any Unicode whitespace run incl. ZWSP U+200B; the run
+      itself is dropped) and '…' is appended, so the total is <= limit.
+    * No whitespace inside the budget (a single long token) → hard cut at
+      ``limit - 1`` plus '…' (total == limit).
+    * ``limit <= 0`` → ``""``.
+
+    Notes
+    -----
+    * Arabic text works naturally: Python's ``len`` counts code points and
+      Arabic letters are single BMP code points, so word boundaries behave
+      exactly like Latin text.
+    * Emoji are wide glyphs (or ZWJ sequences) but YouTube counts code points
+      in its own title UI; we follow the code-point count for simplicity, so
+      an emoji-heavy title may *look* short while consuming many code points.
+    """
+    if text is None or limit <= 0:
+        return ""
+    text = str(text).strip()
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    # Room for one '…': the kept prefix may hold at most limit - 1 chars.
+    last_boundary = -1
+    for match in _TITLE_WS_RE.finditer(text):
+        if match.start() <= limit - 1:
+            last_boundary = match.start()
+        else:
+            break
+    if last_boundary >= 0:
+        return text[:last_boundary] + ELLIPSIS
+    # Single token longer than the budget: no word boundary to honor.
+    return text[: limit - 1] + ELLIPSIS

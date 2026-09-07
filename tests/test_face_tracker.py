@@ -83,6 +83,66 @@ def test_track_dies_after_max_missing_cycles():
     assert ids == [1]
 
 
+def test_track_dies_after_max_missing_frames():
+    # Video-time survival (fps-aware): the track is seen at frame 0, then the
+    # next update() at frame 60 carries no detections. 60 > 50 elapsed video
+    # frames, so the track must die even though only ONE cycle passed —
+    # legacy cycle semantics (max_missing_cycles=1000) would have kept it
+    # alive for a thousand missed updates.
+    tr = FaceTracker(max_missing_frames=50, max_missing_cycles=1000)
+    tr.update(0, [box(100, 100)])
+    assert tr.track_count() == 1
+    ids = tr.update(60, [])
+    assert ids == []
+    assert tr.track_count() == 0
+
+
+def test_track_survives_long_gap_inside_max_missing_frames():
+    # ~10s @30fps of video time between sightings: with max_missing_frames
+    # the identity survives (290-frame gap <= 300) even across a missed
+    # detection cycle, where a per-cycle limit would have dropped the track
+    # after a handful of cycles.
+    tr = FaceTracker(max_missing_frames=300)
+    tr.update(0, [box(100, 100)])
+    tr.update(150, [])                      # missed cycle (no detections)
+    # Reappears at the predicted place -> same ID, not a re-spawn.
+    ids = tr.update(290, [box(100, 100)])
+    assert ids == [0]
+    assert tr.track_count() == 1
+
+
+def test_frame_gap_rule_ignores_same_frame_second_call():
+    # edit_video calls update() twice per detection cycle at the SAME
+    # frame_index (pre-lookahead identities + authoritative update). The
+    # second call must not age the track: last_frame == frame_index on a
+    # matched track, so the frame gap stays 0 and the track survives to be
+    # matched again later with the same ID.
+    tr = FaceTracker(max_missing_frames=30)
+    tr.update(0, [box(100, 100)])
+    ids = tr.update(0, [])                  # double call, same frame
+    assert ids == []
+    assert tr.track_count() == 1
+    ids = tr.update(31, [box(105, 100)])    # still the same identity
+    assert ids == [0]
+
+
+def test_legacy_cycle_semantics_when_max_missing_frames_none():
+    # Default path untouched: max_missing_frames=None (the default) keeps the
+    # legacy per-cycle lifecycle — the track dies after max_missing_cycles
+    # consecutive missed update() calls, exactly as before this feature.
+    tr = FaceTracker(max_missing_cycles=2)
+    tr.update(0, [box(100, 100)])
+    ids = tr.update(10, [])
+    assert ids == []
+    assert tr.track_count() == 1
+    tr.update(20, [])
+    tr.update(30, [])
+    assert tr.track_count() == 0
+    # Returning face after death gets a brand-new id.
+    ids = tr.update(40, [box(100, 100)])
+    assert ids == [1]
+
+
 def test_missing_track_survives_and_reacquires_same_id():
     tr = FaceTracker(max_missing_cycles=3)
     tr.update(0, [box(100, 100), box(500, 100)])

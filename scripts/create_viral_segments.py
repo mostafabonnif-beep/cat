@@ -181,6 +181,31 @@ def _extract_segments_json(response_text):
             except:
                 pass
 
+    # 2b. Recovery: dict-shaped "segments" value (numeric-key object).
+    # Some models return {"segments": {"0": {...}, "1": {...}}} — or nest
+    # segments deeper — instead of a list. Every attempt above requires
+    # isinstance(obj["segments"], list) and the fragment parser below
+    # requires '"segments": [' so such a response used to yield zero
+    # segments. Decode the object value and, when every value is itself a
+    # dict, return its values as the segment list (numeric-looking keys in
+    # ascending numeric order, otherwise insertion order). Never crashes:
+    # any failure falls through to the existing fallbacks untouched.
+    try:
+        decoder = json.JSONDecoder()
+        for dict_match in re.finditer(r'"segments"\s*:\s*\{', response_text):
+            try:
+                obj, _ = decoder.raw_decode(response_text[dict_match.end() - 1:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and obj and all(
+                    isinstance(value, dict) for value in obj.values()):
+                keys = list(obj.keys())
+                if all(re.fullmatch(r"[0-9]+", str(key)) for key in keys):
+                    keys.sort(key=int)
+                return {"segments": [obj[key] for key in keys]}
+    except Exception:
+        pass
+
     # 3. Fallback: Extração bruta de markdown
     try:
         match = re.search(r"```json(.*?)```", response_text, re.DOTALL)
@@ -495,9 +520,56 @@ def _bounded_score(value, default=0.0):
         return float(default)
 
 
+# Arabic orthography unification table (ord -> replacement, None = delete).
+# Arabic text is routinely written with several spelling variants of the same
+# letters: the hamza carriers (أ إ آ ٱ) are the same consonant as plain ا in
+# almost every context, ؤ/ئ are و/ي with a hamza seat, ة and ه both mark the
+# feminine ending, and tatweel (U+0640) is a scribal stretch mark with no
+# phonetic value. Tashkeel/diacritics (U+064B..U+065F) and the superscript
+# alef (U+0670) are optional decorations that never change the word.
+# Deliberately NOT mapped: alif maqsura ى stays distinct from ي so pairs like
+# على (on) / علي (a name) never collide, and ي itself is untouched.
+_ARABIC_ORTHOGRAPHY_TABLE = {
+    0x0623: 0x0627,  # أ hamza above    -> ا
+    0x0625: 0x0627,  # إ hamza below    -> ا
+    0x0622: 0x0627,  # آ madda          -> ا
+    0x0671: 0x0627,  # ٱ wasla          -> ا
+    0x0624: 0x0648,  # ؤ hamza on waw   -> و
+    0x0626: 0x064A,  # ئ hamza on yaa   -> ي
+    0x0629: 0x0647,  # ة ta marbuta     -> ه
+    0x0640: None,    # tatweel (stretch mark) — deleted
+    0x0670: None,    # superscript alef — deleted
+}
+_ARABIC_ORTHOGRAPHY_TABLE.update({cp: None for cp in range(0x064B, 0x0660)})
+
+
+def _normalize_arabic_orthography(text):
+    """Unify common Arabic spelling variants so matching is orthography-blind.
+
+    Translates hamza carriers (أ إ آ ٱ -> ا, ؤ -> و, ئ -> ي) and the ta
+    marbuta (ة -> ه), and removes tatweel (U+0640), the tashkeel block
+    (U+064B..U+065F) and the superscript alef (U+0670). Alif maqsura (ى) is
+    NOT folded into ي and ي is not folded anywhere, so words like على/علي
+    remain distinguishable.
+
+    Pure function with no state: non-Arabic text (English included) passes
+    through byte-identical, so this never alters Latin/ASCII output.
+    """
+    if text is None:
+        return ""
+    return str(text).translate(_ARABIC_ORTHOGRAPHY_TABLE)
+
+
 def _normalized_match_text(value):
-    """Lowercase alphanumeric-only text for transcript alignment."""
-    return re.sub(r"[^\w\s]", "", str(value or "").lower()).strip()
+    """Lowercase alphanumeric-only text for transcript alignment.
+
+    Arabic orthography is unified first (hamza carriers, ta marbuta, tatweel,
+    tashkeel) so spelling variants such as ``الأمور``/``الامور`` compare
+    equal, while distinct words such as ``على``/``علي`` stay distinct (alif
+    maqsura is not folded). English/Latin output is byte-identical to the
+    legacy pipeline: the normalization table only touches Arabic code points.
+    """
+    return re.sub(r"[^\w\s]", "", _normalize_arabic_orthography(str(value or "").lower())).strip()
 
 
 def _text_similarity(target, source):
@@ -514,18 +586,79 @@ def _text_similarity(target, source):
     return max(ratio, overlap)
 
 
-def _title_content_relevance(title, segment):
-    """Fraction of title words that actually appear in the clip's own text.
+def _window_text_from_transcript(transcript_segments, start_time, end_time):
+    """The real words spoken inside ``[start_time, end_time)``.
+
+    Joins (space-separated) the text of every transcript line whose span
+    overlaps the half-open window (``line.start < end_time`` AND
+    ``line.end > start_time``), normalized for matching. This is the ground
+    truth for title relevance: an LLM caption that hallucinates content never
+    present in the actual cut footage can no longer inflate the score, and a
+    title about mid-clip content finally counts because the mid-clip words
+    really are in the window.
+
+    Pure helper: returns '' when the transcript is empty, when the window
+    cannot be parsed as numbers, or when no line overlaps.
+    """
+    if not transcript_segments:
+        return ""
+    try:
+        window_start = float(start_time)
+        window_end = float(end_time)
+    except (TypeError, ValueError):
+        return ""
+    overlapping = []
+    for line in transcript_segments:
+        if not isinstance(line, dict):
+            continue
+        try:
+            line_start = float(line.get("start", 0.0) or 0.0)
+            line_end = float(line.get("end", line_start) or line_start)
+        except (TypeError, ValueError):
+            continue
+        if line_start < window_end and line_end > window_start:
+            overlapping.append(str(line.get("text", "")))
+    return _normalized_match_text(" ".join(overlapping))
+
+
+def _title_content_relevance(title, segment, window_text=None):
+    """Fraction of title words that actually appear in the clip's content.
 
     Catches titles that are pure bait unrelated to what the segment says.
+
+    When ``window_text`` is provided and non-empty (the real transcript words
+    inside the final cut window, e.g. from ``_window_text_from_transcript``)
+    it is the primary evidence: words found there count at full weight, and
+    words that appear ONLY in the LLM's own start_text/end_text/caption count
+    at half weight — a hallucinated caption can no longer make an unrelated
+    title score 1.0. The result is capped at 1.0.
+
+    When ``window_text`` is None or empty the legacy formula (LLM text only,
+    full weight) is used unchanged, so results stay byte-identical to
+    previous releases.
     """
+    title_tokens = set(_normalized_match_text(title).split())
+    if not title_tokens:
+        return 0.0
+    if window_text:
+        window_words = set(_normalized_match_text(str(window_text)).split())
+        llm_words = set(_normalized_match_text(" ".join([
+            segment.get("start_text", ""),
+            segment.get("end_text", ""),
+            segment.get("caption", ""),
+        ])).split())
+        if not window_words and not llm_words:
+            return 0.0
+        llm_only_words = llm_words - window_words
+        matched_window = len(title_tokens & window_words)
+        matched_llm_only = len(title_tokens & llm_only_words)
+        return min(1.0, (matched_window + 0.5 * matched_llm_only) / len(title_tokens))
     content = _normalized_match_text(" ".join([
         segment.get("start_text", ""),
         segment.get("end_text", ""),
         segment.get("caption", ""),
     ]))
-    title_tokens = set(_normalized_match_text(title).split())
-    if not content or not title_tokens:
+    if not content:
         return 0.0
     content_tokens = set(content.split())
     return len(title_tokens & content_tokens) / len(title_tokens)
@@ -565,11 +698,14 @@ def _title_quality_score(title):
     return round(max(0.0, min(100.0, score)), 1)
 
 
-def _choose_recommended_title(segment):
+def _choose_recommended_title(segment, window_text=None):
     """Select the strongest safe-looking title candidate for default publishing.
 
     Safety filtering still runs later; this helper only ranks readability and
-    does not approve a title for publication.
+    does not approve a title for publication. ``window_text`` (optional) is
+    the real transcript content of the final cut window: when given, content
+    relevance is measured against the actual footage words instead of only
+    the LLM's own start/end/caption text.
     """
     candidates = [segment.get("title", "")]
     alternatives = segment.get("alt_titles") or []
@@ -590,7 +726,7 @@ def _choose_recommended_title(segment):
     def rank(item):
         index, value = item
         quality = _title_quality_score(value)
-        relevance = _title_content_relevance(value, segment)
+        relevance = _title_content_relevance(value, segment, window_text)
         return (quality + 12.0 * relevance, -index)
 
     return max(enumerate(clean), key=rank)[1]
@@ -814,11 +950,14 @@ def _windows_are_near_duplicates(left, right):
     left_duration = max(0.1, left_end - left_start)
     right_duration = max(0.1, right_end - right_start)
     overlap_ratio = intersection / min(left_duration, right_duration)
-    # Exact/near-identical windows and small shifts are one clip, even when
-    # titles differ. The second rule preserves genuinely different partial
-    # overlaps such as two 15s windows sharing only 7s.
-    return overlap_ratio >= 0.75 or (
-        abs(left_start - right_start) <= 1.0 and overlap_ratio >= 0.50
+    # Windows sharing >= 60% of the shorter window are the same footage, and
+    # so are near-identical placements (<= 1s shift) that share >= 45% of the
+    # shorter window — keeping both would export two clips built from mostly
+    # the same seconds. Genuinely different partial overlaps stay distinct:
+    # e.g. 0-20 vs 9-29 shares only 11/20 = 0.55 with a 9s shift, and 0-15 vs
+    # 10-25 shares 5/15 ≈ 0.33 with a 10s shift.
+    return overlap_ratio >= 0.60 or (
+        abs(left_start - right_start) <= 1.0 and overlap_ratio >= 0.45
     )
 
 
@@ -1122,7 +1261,14 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             hashtags = seg.get('hashtags', [])
             if isinstance(hashtags, str):
                 hashtags = [h.strip().lstrip('#') for h in re.split(r'[,\s]+', hashtags) if h.strip()]
-            recommended = seg.get('recommended_title') or _choose_recommended_title(seg)
+            # Title relevance is measured against the words ACTUALLY inside
+            # the final cut window (not only the LLM's own start/end/caption,
+            # which can hallucinate). Explicit numeric windows still benefit:
+            # their window words are the real ones. When the LLM already
+            # shipped an explicit recommended_title it is kept verbatim.
+            window_text = _window_text_from_transcript(
+                transcript_segments, final_start_time, final_end_time)
+            recommended = seg.get('recommended_title') or _choose_recommended_title(seg, window_text=window_text)
             segment_entry = {
                 "title": seg.get('title', 'Viral Segment'),
                 "start_time": final_start_time,
