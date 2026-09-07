@@ -13,6 +13,22 @@ updates:
       - "dependencies"
     # Heavy AI stacks (torch/whisperx) are environment-sensitive — review
     # those PRs manually instead of auto-merging anything.
+    #
+    # Hard pins documented in the codebase — do not let Dependabot re-propose
+    # updates that violate them:
+    #   * numpy<2 — whisperx/pyannote break on NumPy 2.x (np.NaN removed);
+    #     see requirements.txt / requirements-transcribe.txt.
+    #   * onnxruntime<1.24 — 1.24+ drops Python 3.10 wheels while the project
+    #     supports 3.10–3.12; see pyproject.toml.
+    #   * huggingface-hub<1.0 — required by the classic WhisperX install path;
+    #     see requirements-transcribe.txt / docs/WINDOWS_SETUP_FIX_AR.md.
+    ignore:
+      - dependency-name: "numpy"
+        versions: [">=2"]
+      - dependency-name: "onnxruntime"
+        versions: [">=1.24"]
+      - dependency-name: "huggingface-hub"
+        versions: [">=1.0"]
 
   # GitHub Actions used in .github/workflows/
   - package-ecosystem: "github-actions"

@@ -6,11 +6,19 @@ from pathlib import Path
 import requests
 import tqdm.asyncio
 
+try:  # versioned User-Agent from the single source of truth (never goes stale)
+    from app_version import VERSION as _APP_VERSION
+except Exception:  # pragma: no cover - defensive fallback
+    _APP_VERSION = "7"
+
+_UA_VERSION = _APP_VERSION.split("-", 1)[0]  # "7.32.0-pro" -> "7.32.0"
+
 
 class GoogleTranslator:
     """Small requests-based adapter for Google's public translation endpoint."""
 
     endpoint = "https://translate.googleapis.com/translate_a/single"
+    user_agent = "OUSSAMA-Cutter/" + _UA_VERSION
 
     def __init__(self, source="auto", target="en", timeout=30):
         self.source = source or "auto"
@@ -27,7 +35,7 @@ class GoogleTranslator:
                 "dt": "t",
                 "q": text,
             },
-            headers={"User-Agent": "OUSSAMA-Cutter/7.26"},
+            headers={"User-Agent": self.user_agent},
             timeout=self.timeout,
         )
         response.raise_for_status()
