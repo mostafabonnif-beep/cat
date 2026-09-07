@@ -34,6 +34,104 @@ from scripts.transcription_diagnostics import (
 i18n = I18nAuto()
 
 
+# --- Memory-error detection & rescue helpers (v7.32.3) -----------------------
+# WhisperX + pyannote VAD can exhaust RAM/VRAM on long videos or small
+# machines. The failures arrive as torch ``RuntimeError: bad allocation``
+# (Windows heap/CUDA alloc) or numpy ``_ArrayMemoryError: Unable to allocate
+# N. MiB`` — neither matches the old OOM-guard markers, so whole runs died
+# with a cryptic traceback and a pointless full restart. These helpers detect
+# those failures and route to the lightweight faster-whisper backend.
+_MEMORY_ERROR_MARKERS = (
+    "bad allocation",
+    "bad_alloc",
+    "std::bad_alloc",
+    "unable to allocate",
+    "_arraymemoryerror",
+    "numpy.core._exceptions",
+    "out of memory",
+    "cuda out of memory",
+    "insufficient memory",
+    "cannot allocate",
+    "cudnn error",
+    "cublas error",
+)
+
+
+def _is_memory_error(exc):
+    if isinstance(exc, MemoryError):
+        return True
+    msg = str(exc).lower()
+    return any(m in msg for m in _MEMORY_ERROR_MARKERS)
+
+
+def _log_memory_state(label=""):
+    """Print available RAM/VRAM so low-memory failures are diagnosable."""
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        free_gib = mem.available / 2**30
+        print("[memory] {} available RAM: {:.2f} GiB / {:.1f} GiB".format(
+            label, free_gib, mem.total / 2**30), flush=True)
+        if free_gib < 2.0:
+            print("[memory] ⚠️ RAM is nearly exhausted — close the browser and "
+                  "heavy apps, or restart the PC, before retrying.", flush=True)
+        if torch is not None and torch.cuda.is_available():
+            free_v, total_v = torch.cuda.mem_get_info()
+            print("[memory] {} available VRAM: {:.2f} GiB / {:.1f} GiB".format(
+                label, free_v / 2**30, total_v / 2**30), flush=True)
+    except Exception:
+        pass
+
+
+def _release_cuda_memory(model=None, delete_model=False):
+    """Free what we can between retries.
+
+    With ``delete_model=False`` the model stays usable (only cached blocks are
+    released); with ``delete_model=True`` the model object is dropped too.
+    """
+    gc.collect()
+    if delete_model and model is not None:
+        try:
+            del model
+        except Exception:
+            pass
+        gc.collect()
+    if torch is not None:
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+
+def _transcribe_via_fallback(input_file, model_name, project_folder,
+                             srt_file, tsv_file, json_file, cache_path, device):
+    """Memory-exhausted rescue: run the lightweight faster-whisper backend.
+
+    Called when WhisperX (+pyannote VAD) cannot fit in RAM/VRAM. Output files
+    keep the exact same names the WhisperX path would write, so every
+    downstream stage is unaffected. Word-level wav2vec2 alignment is skipped
+    in this degraded mode (faster-whisper still emits per-word timestamps).
+    """
+    _log_memory_state("before faster-whisper fallback")
+    print("[transcribe] WhisperX could not fit in memory — switching to the "
+          "lighter faster-whisper backend (word-alignment step skipped).",
+          flush=True)
+    from scripts import transcription_fallback
+    result = transcription_fallback.transcribe(
+        input_file, model_name, device=str(device or "auto"),
+        progress=lambda msg: print(msg, flush=True))
+    transcription_fallback.write_outputs(result, srt_file, tsv_file, json_file)
+    try:
+        _save_transcription_cache(cache_path, input_file, model_name,
+                                  srt_file, tsv_file, json_file, device=device)
+    except Exception:
+        pass
+    print("[transcribe] faster-whisper fallback finished: {} / {}".format(
+        srt_file, tsv_file), flush=True)
+    return srt_file, tsv_file
+
+
 def _run_with_heartbeat(label, fn, stage="transcribe", start_percent=25, end_percent=85, interval=15):
     """Run a blocking WhisperX call while emitting visible WebUI heartbeats."""
     started = time.time()
@@ -496,6 +594,7 @@ def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='
 
     try:
         apply_safe_globals_hack()
+        _log_memory_state("before loading audio/model")
         
         # 1. Carregar Áudio (sempre necessário)
         print(f"Carregando áudio: {input_file}")
@@ -598,14 +697,42 @@ def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='
                 raise last_load_err or ValueError(
                     "No usable Whisper model size for '{}'".format(model_name))
 
-            result = _run_with_heartbeat(
-                "جاري التفريغ الصوتي على الجهاز المحدد",
-                lambda: model.transcribe(audio, batch_size=16, chunk_size=10),
-                stage="transcribe",
-                start_percent=45,
-                end_percent=72,
-            )
-            
+            # v7.32.3 memory ladder: WhisperX + pyannote VAD can exhaust
+            # RAM/VRAM on long videos ("bad allocation" / "Unable to
+            # allocate"). Retry once with a smaller batch, then hand over to
+            # the lightweight faster-whisper backend (CTranslate2 streams the
+            # audio and uses its own Silero VAD — no pyannote, far less RAM).
+            result = None
+            memory_error = None
+            for batch_size in (16, 8):
+                try:
+                    result = _run_with_heartbeat(
+                        "جاري التفريغ الصوتي على الجهاز المحدد",
+                        lambda b=batch_size: model.transcribe(
+                            audio, batch_size=b, chunk_size=10),
+                        stage="transcribe",
+                        start_percent=45,
+                        end_percent=72,
+                    )
+                    if batch_size == 8:
+                        print("[transcribe] WhisperX succeeded with reduced "
+                              "batch_size=8.", flush=True)
+                    break
+                except Exception as exc:
+                    if not _is_memory_error(exc):
+                        raise
+                    memory_error = exc
+                    _log_memory_state("after WhisperX OOM")
+                    print("[transcribe] WhisperX ran out of memory (RAM/VRAM): "
+                          "{} — retrying lighter.".format(exc), flush=True)
+                    # Keep the model alive for the smaller-batch retry.
+                    _release_cuda_memory(model, delete_model=False)
+            if result is None and memory_error is not None:
+                _release_cuda_memory(model, delete_model=True)
+                return _transcribe_via_fallback(
+                    input_file, model_name, project_folder,
+                    srt_file, tsv_file, json_file, cache_path, device)
+
             detected_language = result["language"]
             start_segments = result["segments"]
             

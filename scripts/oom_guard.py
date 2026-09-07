@@ -35,10 +35,21 @@ OOM_MARKERS = (
     "RuntimeError: CUDA",
     "insufficient memory",
     "cannot allocate",
+    # v7.32.3: real-world memory failures that used to slip through the guard
+    # and kill whole runs with a cryptic traceback:
+    "bad allocation",          # torch RuntimeError on Windows (heap/VRAM alloc)
+    "bad_alloc",               # C++ std::bad_alloc surfaced through torch
+    "std::bad_alloc",
+    "unable to allocate",      # numpy _ArrayMemoryError ("Unable to allocate N. MiB")
+    "_arraymemoryerror",       # numpy.core._exceptions._ArrayMemoryError repr
+    "numpy.core._exceptions",
+    "memoryerror",
 )
 
 
 def _looks_like_oom(exc):
+    if isinstance(exc, MemoryError):
+        return True  # str(MemoryError(...)) is empty, so markers alone would miss it
     msg = str(exc)
     return any(m.lower() in msg.lower() for m in OOM_MARKERS)
 
