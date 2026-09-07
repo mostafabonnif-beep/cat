@@ -22,6 +22,9 @@ updates:
     #     supports 3.10–3.12; see pyproject.toml.
     #   * huggingface-hub<1.0 — required by the classic WhisperX install path;
     #     see requirements-transcribe.txt / docs/WINDOWS_SETUP_FIX_AR.md.
+    #   * tokenizers<0.23.1 — transformers (4.x / <=5.14 line) caps tokenizers
+    #     at <=0.23.0 and 0.23.0 was never released on PyPI; 0.23.1+ breaks the
+    #     transformers import check. See requirements-transcribe.txt.
     ignore:
       - dependency-name: "numpy"
         versions: [">=2"]
@@ -29,6 +32,8 @@ updates:
         versions: [">=1.24"]
       - dependency-name: "huggingface-hub"
         versions: [">=1.0"]
+      - dependency-name: "tokenizers"
+        versions: [">=0.23.1"]
 
   # GitHub Actions used in .github/workflows/
   - package-ecosystem: "github-actions"
