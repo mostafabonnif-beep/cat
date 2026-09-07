@@ -93,8 +93,15 @@ def crop_and_resize_two_faces(frame, face_positions, zoom_out_factor=2.2):
     )
 
 
-def _safe_face_boxes(face_positions, frame_shape, max_faces=4):
-    """Normalize face boxes to valid ``(x, y, w, h)`` rectangles."""
+def _safe_face_boxes(face_positions, frame_shape, max_faces=4,
+                     preserve_order=False):
+    """Normalize face boxes to valid ``(x, y, w, h)`` rectangles.
+
+    Clamping/validation always runs. By default the normalized boxes are
+    sorted left-to-right so faces never jump between grid cells; with
+    ``preserve_order=True`` the caller's order is kept (identity-stable
+    crop slots must not be re-sorted by x — see the edit_video call site).
+    """
     if not face_positions:
         return []
     frame_h, frame_w = frame_shape[:2]
@@ -108,21 +115,27 @@ def _safe_face_boxes(face_positions, frame_shape, max_faces=4):
         w = max(1, min(w, frame_w - x))
         h = max(1, min(h, frame_h - y))
         normalized.append((x, y, w, h))
-    # Stable left-to-right order avoids faces jumping between grid cells.
-    normalized.sort(key=lambda b: (b[0] + b[2] / 2.0, b[1] + b[3] / 2.0))
+    if not preserve_order:
+        # Stable left-to-right order avoids faces jumping between grid cells.
+        normalized.sort(key=lambda b: (b[0] + b[2] / 2.0, b[1] + b[3] / 2.0))
     return normalized[:max(1, int(max_faces))]
 
 
 def crop_and_resize_multi_faces(frame, face_positions, target_w=1080,
                                 target_h=1920, layout="auto", max_faces=4,
-                                zoom_out_factor=2.2):
+                                zoom_out_factor=2.2, preserve_order=False):
     """Compose one to four tracked faces into a portrait output.
 
     ``auto`` keeps the legacy two-person vertical stack and uses a 2x2 grid
     for three or four people. ``speaker`` gives the largest face the full
     portrait and places up to three other faces as small thumbnails.
+
+    ``preserve_order`` keeps the caller's face order (identity-stable slots
+    from the tracker); the default sorts boxes left-to-right inside
+    :func:`_safe_face_boxes`.
     """
-    boxes = _safe_face_boxes(face_positions, frame.shape, max_faces=max_faces)
+    boxes = _safe_face_boxes(face_positions, frame.shape, max_faces=max_faces,
+                             preserve_order=preserve_order)
     if not boxes:
         return np.zeros((target_h, target_w, 3), dtype=np.uint8)
     if len(boxes) == 1:

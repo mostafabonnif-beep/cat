@@ -98,7 +98,12 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
     ``face_zoom`` (0.0 = legacy behaviour) makes the crop height adapt to the
     face size so the face occupies roughly that fraction of the frame height
     (0.33 ≈ the standard talking-head zoom). The crop never gets tighter
-    than 40% of the source height, so group shots keep their context.
+    than 40% of the source height, so group shots keep their context. When
+    the requested zoom would make the 9:16 window narrower than the face
+    (face bisected), the zoom is relaxed to the largest value that still
+    fits the full face width with ~6% margin; only when no window inside the
+    source can contain the face (extreme close-up) does it fall back to the
+    centered full-height crop (best effort).
     """
     h, w, _ = frame.shape
     x1, y1, x2, y2 = [float(value) for value in face_bbox[:4]]
@@ -126,10 +131,32 @@ def crop_and_resize_insightface(frame, face_bbox, target_width=1080, target_heig
         # of the output height instead of always using the full source
         # height (which leaves distant speakers tiny in the Short).
         zoom_fraction = min(0.9, max(0.1, float(face_zoom)))
+
+        # Horizontal-fit relaxation: a 9:16 window is only target_width /
+        # target_height (~56%) as wide as it is tall, so a face that is wide
+        # relative to its height gets bisected when framed by height alone —
+        # the crop cuts the ears off. The largest zoom whose window still
+        # fits the WHOLE face width with ~6% margin solves
+        #     face_w * 1.06 <= source_w = (face_h / z) * (tw / th)
+        #   => z_fit = (face_h * target_width) / ((face_w * 1.06) * target_height)
+        face_w = max(1.0, x2 - x1)
+        z_fit = (face_h * target_width) / ((face_w * 1.06) * target_height)
+        if z_fit < zoom_fraction:
+            # Requested zoom would cut the face sideways: zoom out just
+            # enough to fit it (but never below the 0.1 floor).
+            zoom_fraction = max(z_fit, 0.1)
+
         source_h = int(face_h / zoom_fraction)
         # Clamp: never tighter than 40% of the source height, never looser
         # than the full source frame.
         source_h = max(int(h * 0.4), min(source_h, int(h)))
+        # Extreme close-up fallback: when even the relaxed zoom would still
+        # need more than the full source height (face_h / zoom_fraction >= h,
+        # so the clamp above lands on source_h == h) AND the resulting
+        # full-frame window is still narrower than the face below, no 9:16
+        # window inside this source can contain the face — any crop bisects
+        # it. The clamps then fall back to the centered full-height crop
+        # (identical to the legacy face_zoom=0 geometry); best effort.
     else:
         source_h = int(h)
     source_w = int(source_h * (target_width / target_height))

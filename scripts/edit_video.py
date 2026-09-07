@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -232,6 +233,38 @@ def face_count_hold(state, num_faces, prev_faces, misses, grace):
     if num_faces > 0 and num_faces >= state:
         return False, 0
     return False, misses
+
+
+def scaled_dead_zone(dead_zone, frame_w, frame_h, diagonal_reference=2203.0):
+    """Resolution-scaled crop-stabilization dead zone (v7.31).
+
+    The stabilization dead zone was a fixed pixel distance tuned for 1080p
+    (the 40px default ignores sub-pixel detection jitter on a 1920x1080
+    source) — on 4K footage a talking head easily moves 40px, so the fixed
+    threshold under-smoothed high-res sources. The threshold scales with the
+    frame diagonal: 1080p keeps the exact legacy value (factor 1.0) while a
+    4K source roughly doubles it. ``dead_zone <= 0`` disables the dead zone
+    (returns 0.0).
+    """
+    if dead_zone <= 0:
+        return 0.0
+    return float(dead_zone) * max(
+        1.0, math.hypot(float(frame_w), float(frame_h)) / float(diagonal_reference))
+
+
+def face_join_hold(consecutive, want_split, grace=2):
+    """Auto-mode 1→2 split join grace (v7.31).
+
+    A single detection cycle where a second face is big enough (passer-by,
+    boundary flip-flop) must not pop the layout to split and then back.
+    ``allow_split`` is True only when ``want_split`` was True on ``grace``
+    consecutive calls (the counter counts up from 0); any False resets the
+    count to 0.
+    """
+    if want_split:
+        consecutive = consecutive + 1
+        return consecutive >= grace, consecutive
+    return False, 0
 
 
 def generate_short_fallback(input_file, output_file, index, project_folder, final_folder, no_face_mode="padding"):
@@ -754,6 +787,12 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     # popping to 1 face and back.
     face_drop_misses = 0
     face_drop_grace_cycles = 2
+    # Auto-mode 1→2 split grace (v7.31): consecutive detection cycles that
+    # wanted a split while the layout is still single-face (see
+    # face_join_hold). Stops a passer-by / boundary flip-flop from popping
+    # the crop to split and back.
+    face_join_consecutive = 0
+    face_join_grace_cycles = 2
 
     transition_duration = 4 # Smooth transition over 4 frames (almost continuous)
     transition_frames = []
@@ -844,6 +883,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
             transition_frames = []
             faces_activity_state = []
             face_drop_misses = 0
+            face_join_consecutive = 0
             next_detection_frame = frame_index
             print(f"DEBUG: Scene cut at frame {frame_index} — crop state reset")
 
@@ -1069,7 +1109,12 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
 
             # Decide how many faces to frame. Explicit multi modes are stable;
             # auto intentionally keeps the legacy 1/2-speaker heuristic.
+            # v7.31: auto sub-decisions flag ``split_wanted`` instead of
+            # committing a 2-face layout instantly; the join grace below then
+            # requires ``face_join_grace_cycles`` consecutive wanted-cycles
+            # before a 1-face layout actually splits (see face_join_hold).
             target_faces = 1
+            split_wanted = False
             mode_name = str(face_mode).lower()
             if mode_name in {"2", "3", "4"}:
                 target_faces = int(mode_name)
@@ -1115,6 +1160,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                              # Both talking -> 2 faces
                              # Raised threshold to 4.0 to avoid noise triggering split
                              target_faces = 2
+                             split_wanted = True
                              decided = True
                              print("DEBUG: Dual Active Speakers! Both scores > 4.0. Forcing Split Mode.")
                          
@@ -1130,6 +1176,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                         # Two-Face Constraint
                         if second > (two_face_threshold * largest):
                             target_faces = 2
+                            split_wanted = True
                         else:
                             target_faces = 1
                 else:
@@ -1141,6 +1188,27 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                  pass
             
             # -----------------------------
+
+            # (v7.31) 1→2 split join grace (see face_join_hold). Both auto
+            # sub-decisions above only flagged ``split_wanted``: a passer-by
+            # or boundary flip-flop can make a second face big enough for a
+            # single detection cycle, which used to pop the crop to split
+            # and back. Require ``face_join_grace_cycles`` consecutive
+            # wanted-cycles before LEAVING a 1-face layout; an already-active
+            # 2-face layout commits immediately (no re-entry delay). Explicit
+            # modes (2/3/4/grid) never set ``split_wanted``, so they are
+            # untouched; the down-grace path (face_count_hold, v7.27) is
+            # also left alone.
+            if split_wanted:
+                if current_num_faces_state >= 2:
+                    target_faces = 2
+                else:
+                    allow_split, face_join_consecutive = face_join_hold(
+                        face_join_consecutive, True, face_join_grace_cycles)
+                    if not allow_split:
+                        target_faces = 1
+            else:
+                face_join_consecutive = 0
 
             # (v7.27) During the count-down grace window keep requesting the
             # previous multi-face target so the lookahead gets a chance to
@@ -1318,6 +1386,13 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
             if detections:
                 # --- STABILIZATION (DEAD ZONE) ---
                 # Check if movement is small enough to ignore
+                # v7.31: resolution-scaled dead zone (see scaled_dead_zone).
+                # The fixed 40px threshold was tuned for 1080p and
+                # under-smoothed high-res sources; it now scales with the
+                # frame diagonal (1080p keeps 40px, 4K ~doubles). Computed
+                # once per detection cycle, not per face.
+                effective_dead_zone = scaled_dead_zone(
+                    dead_zone, frame_width, frame_height)
                 if last_detected_faces is not None and len(last_detected_faces) == len(detections):
                     is_stable = True
                     for i in range(len(detections)):
@@ -1325,9 +1400,10 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                         new_c = get_center_bbox(detections[i])
                         dist = np.sqrt((old_c[0]-new_c[0])**2 + (old_c[1]-new_c[1])**2)
                         
-                        # Threshold: dead_zone variable (pixels)
+                        # Threshold: dead_zone variable (pixels), scaled to
+                        # the source resolution.
                         # Reduced jitter for talking heads
-                        if dist > dead_zone: 
+                        if dist > effective_dead_zone: 
                             is_stable = False
                             break
                     
@@ -1444,8 +1520,13 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                  (f[0], f[1], f[2] - f[0], f[3] - f[1])
                  for f in current_faces[:4]
              ]
+             # preserve_order=True: the detection/tracking stage above already
+             # put each face in its identity-stable slot (tracker IDs,
+             # active-speaker order, proximity sort). Re-sorting by x inside
+             # crop_and_resize_multi_faces would swap the top/bottom cells
+             # whenever the two people cross x-positions mid-conversation.
              result = crop_and_resize_multi_faces(
-                 frame, rects, layout="auto", max_faces=4,
+                 frame, rects, layout="auto", max_faces=4, preserve_order=True,
              )
              timeline_frames.append((frame_index, str(min(target_len, 4))))
         else:

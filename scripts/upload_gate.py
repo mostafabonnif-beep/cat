@@ -42,6 +42,23 @@ from scripts.metadata_compliance import check_metadata, summarize_metadata
 PUBLISH_BLOCKLIST = "publish_blocklist.json"
 SAFETY_REPORT = "safety_report.json"
 SCORECARD = "risk_scorecard.json"
+# Source of truth the publish panel reads for the *shipped* title/caption
+# (webui/publish_panel.segments_for_project / clip_suggestion).
+VIRAL_SEGMENTS_FILE = "viral_segments.txt"
+
+
+def effective_title(segment):
+    """The publish title for a segment: recommended_title, else title, else ''.
+
+    publish_panel ships ``seg['recommended_title']`` (the LLM-refined title
+    the creator flow picks) while on-disk risk/safety reports historically
+    persist only the raw ``seg['title']``. Every gate/audit decision that
+    reads a segment's stored title must vet the string that would actually be
+    uploaded — ``effective_title(segment)`` — so the two can never drift.
+    """
+    if not isinstance(segment, dict):
+        return ""
+    return str(segment.get("recommended_title") or segment.get("title") or "").strip()
 
 
 class UploadGateError(Exception):
@@ -183,6 +200,11 @@ def check_clip(project_folder, index=None, title="", caption="", hashtags=None,
     Returns {"allowed": bool, "reasons": [...], "metadata": {...}}.
     Never raises — callers decide what to do with the verdict.
 
+    `title` is the exact publish-metadata string to vet. Callers sourcing the
+    title from a segment dict MUST pass `effective_title(segment)` — the
+    recommended_title publish_panel ships — never the raw stored title, so the
+    gate scores the string that would actually be uploaded.
+
     `music_gate`: "warn" (default, flagged), "block" (refused) or "off"
     (ignored) — controls how music_fingerprint.json matches are treated.
     """
@@ -305,21 +327,62 @@ def gate_upload(project_folder, index=None, title="", caption="", hashtags=None,
     return verdict
 
 
+def _viral_publish_titles(project_folder):
+    """Map segment index → the title publish_panel actually ships.
+
+    Reads ``recommended_title`` from viral_segments.txt (list position ==
+    segment index, the same mapping publish_panel.clip_suggestion uses).
+    Returns {} when the file is missing/unreadable (legacy projects, tests) so
+    callers fall back to effective_title() on the persisted entry.
+    """
+    data = _load_json(project_folder, VIRAL_SEGMENTS_FILE)
+    if not data:
+        return {}
+    titles = {}
+    segments = data.get("segments", [])
+    if not isinstance(segments, list):
+        return {}
+    for index, seg in enumerate(segments):
+        if isinstance(seg, dict):
+            title = str(seg.get("recommended_title") or "").strip()
+            if title:
+                titles[index] = title
+    return titles
+
+
 def audit_project(project_folder, extra_rules_path=None):
-    """Check every scored clip in the project folder. Returns (allowed, blocked)."""
+    """Check every scored clip in the project folder. Returns (allowed, blocked).
+
+    Every clip is vetted with the title that would actually ship: the
+    recommended_title from viral_segments.txt when present, else the title
+    persisted on the scorecard entry (see effective_title). The blocklist
+    registry is keyed by clip *index*, never by title, so unifying the vetted
+    title cannot change registry identity or dedup behavior.
+    """
     scorecard = _load_json(project_folder, SCORECARD)
     allowed, blocked = [], []
     segments = (scorecard or {}).get("segments", [])
+    published_titles = _viral_publish_titles(project_folder)
     for entry in segments:
+        if not isinstance(entry, dict):
+            continue
         idx = entry.get("index")
+        # Gate/audit must vet the shipped publish title (recommended_title),
+        # not the raw LLM title that risk reports persisted — effective_title()
+        # is the single source for that decision.
+        merged = dict(entry)
+        recommended = published_titles.get(idx)
+        if recommended:
+            merged["recommended_title"] = recommended
+        publish_title = effective_title(merged)
         verdict = check_clip(project_folder, idx,
-                             title=entry.get("title", ""),
+                             title=publish_title,
                              require_video=False,
                              extra_rules_path=extra_rules_path)
         if verdict["allowed"]:
             allowed.append(idx)
         else:
-            blocked.append({"index": idx, "title": entry.get("title", ""),
+            blocked.append({"index": idx, "title": publish_title,
                             "reasons": verdict["reasons"]})
     return allowed, blocked
 

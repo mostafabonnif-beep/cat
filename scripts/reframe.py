@@ -13,9 +13,13 @@ Modes:
     pad   — fit the full frame with a blurred background (bars).
             Default for 16:9 (cropping 9:16 to 16:9 would destroy the shot).
 
+Clips that already match the requested dimensions are detected with ffprobe
+and returned as a no-op (``skipped=True``) instead of being lossily
+re-encoded.
+
 Usage:
   python -m scripts.reframe --project VIRALS/x --aspect 4:5 [--mode crop] [--dry-run]
-  python -m scripts.reframe --aspect 9:16 --project VIRALS/x   # no-op, verifies
+  python -m scripts.reframe --aspect 9:16 --project VIRALS/x   # already-9:16 clips are skipped, not re-encoded
 
 The reframed clip REPLACES the subtitled clip in place (atomic: temp file +
 rename), so the risk scorecard, publish gate and organize_output all see the
@@ -84,9 +88,60 @@ def build_ffmpeg_filter(target, mode):
     )
 
 
+def ffprobe_binary(ffmpeg):
+    """Derive the ffprobe binary sitting next to the configured ffmpeg."""
+    ffmpeg = str(ffmpeg) if ffmpeg else "ffmpeg"
+    if os.path.basename(ffmpeg) in ("ffmpeg", "ffmpeg.exe"):
+        # Plain name on PATH → sibling plain name (shutil.which adds .exe).
+        return "ffprobe"
+    # Custom path such as /opt/bin/ffmpeg → /opt/bin/ffprobe.
+    folder = os.path.dirname(ffmpeg)
+    return os.path.join(folder, "ffprobe") if folder else "ffprobe"
+
+
+def _probe_dimensions(clip, ffprobe="ffprobe"):
+    """Read the input's real video dimensions via ffprobe.
+
+    Returns ``(width, height)`` or None when ffprobe is unavailable, the
+    probe fails or the output cannot be parsed (callers then keep legacy
+    behavior).
+    """
+    if not ffprobe or shutil.which(ffprobe) is None:
+        return None
+    cmd = [ffprobe, "-v", "error", "-select_streams", "v:0",
+           "-show_entries", "stream=width,height",
+           "-of", "csv=s=x:p=0", clip]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in (proc.stdout or "").splitlines():
+        parts = line.strip().split("x")
+        if len(parts) == 2:
+            try:
+                return int(parts[0]), int(parts[1])
+            except ValueError:
+                continue
+    return None
+
+
 def reframe_file(clip, target, mode, ffmpeg="ffmpeg", dry_run=False):
-    """Reframe one clip in place (atomic replace; .orig.mp4 backup kept)."""
+    """Reframe one clip in place (atomic replace; .orig.mp4 backup kept).
+
+    Clips whose real dimensions already equal ``target`` are returned as
+    ``{"ok": True, "skipped": True, "reason": "already WxH"}`` without any
+    transcode — re-encoding an already-matching clip would only lose
+    quality. When ffprobe is unavailable or probing fails, the legacy
+    always-transcode behavior is kept.
+    """
     w, h = target
+    ffprobe = ffprobe_binary(ffmpeg)
+    dims = _probe_dimensions(clip, ffprobe)
+    if dims == (w, h):
+        return {"ok": True, "clip": clip, "skipped": True,
+                "reason": "already %dx%d" % (w, h)}
     vf = build_ffmpeg_filter(target, mode)
     tmp = clip + ".reframe_tmp.mp4"
     cmd = [ffmpeg, "-y", "-i", clip,

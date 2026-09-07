@@ -946,7 +946,18 @@ def main():
                 use_existing_json = 'no'
                 print(i18n("Existing segments count ({}) differs from requested count ({}); generating fresh segments.").format(existing_count, requested_count_hint))
             elif args.skip_prompts:
-                use_existing_json = 'yes'
+                # v7.31 staleness guard: segments saved from a DIFFERENT input
+                # video (changed size/mtime) must not be cut against the new
+                # footage. When the file carries a source fingerprint that no
+                # longer matches, force regeneration instead of silent reuse.
+                stored_fp = create_viral_segments.segments_source_fingerprint(existing_data)
+                current_fp = (create_viral_segments.source_video_fingerprint(input_video)
+                              if input_video else None)
+                if stored_fp and current_fp and stored_fp != current_fp:
+                    use_existing_json = 'no'
+                    print(i18n("Input video changed since these segments were generated; regenerating segments."))
+                else:
+                    use_existing_json = 'yes'
             else:
                 use_existing_json = input(i18n("Use existing viral segments? (yes/no) [default: yes]: ")).strip().lower()
 
@@ -1399,6 +1410,14 @@ def main():
                     print(i18n("Stopping execution."))
                     sys.exit(1)
                 
+                # v7.31: record which source video produced these segments so
+                # a later run on a different file detects staleness instead of
+                # reusing old AI windows against new footage. (Every later
+                # dict() copy in the pipeline preserves this top-level key.)
+                if isinstance(viral_segments, dict) and input_video:
+                    _source_fp = create_viral_segments.source_video_fingerprint(input_video)
+                    if _source_fp:
+                        viral_segments.setdefault("source_meta", {})["source_video_fp"] = _source_fp
                 save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
 
         # 3.5. Fix Raw Segments (missing timestamps)
@@ -1423,6 +1442,12 @@ def main():
                               args.max_duration, 
                               output_count=None 
                           )
+                          # process_segments returns a fresh dict: re-stamp the
+                          # source fingerprint before persisting (v7.31).
+                          if isinstance(viral_segments, dict) and input_video:
+                              _source_fp = create_viral_segments.source_video_fingerprint(input_video)
+                              if _source_fp:
+                                  viral_segments.setdefault("source_meta", {})["source_video_fp"] = _source_fp
                           save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
                           print(i18n("Segments aligned and saved."))
                       except Exception as e:
@@ -1464,14 +1489,13 @@ def main():
         requested_count = max(1, int(num_segments or args.segments or 1))
         safe_segments = list((viral_segments or {}).get("segments", []))
         if len(safe_segments) > requested_count:
-            def _clip_score(item):
-                try:
-                    return float(item.get("score", 0) or 0)
-                except (TypeError, ValueError):
-                    return 0.0
-            safe_segments.sort(key=_clip_score, reverse=True)
+            # v7.31: export the top-N in the SAME editorial order the review
+            # table shows (candidate_rank from the diversity ranking, then
+            # selection_score). Sorting by the raw AI ``score`` here used to
+            # contradict every other stage of the pipeline.
             viral_segments = dict(viral_segments)
-            viral_segments["segments"] = safe_segments[:requested_count]
+            viral_segments["segments"] = create_viral_segments.finalize_top_segments(
+                safe_segments, requested_count)
             save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
             print(i18n("Final selection: exporting {} of {} safe candidates.").format(requested_count, len(safe_segments)))
         elif len(safe_segments) < requested_count:
@@ -1943,8 +1967,12 @@ def main():
                     if idx is None or idx >= len(segs):
                         continue
                     seg = segs[idx]
+                    # v7.31: publish ships ``recommended_title`` (publish_panel),
+                    # so the metadata gate must vet THAT string, not the raw
+                    # LLM ``title`` that never reaches the platform.
                     axis = metadata_compliance.metadata_axis(
-                        seg.get("title", ""), seg.get("caption", ""),
+                        seg.get("recommended_title") or seg.get("title", ""),
+                        seg.get("caption", ""),
                         seg.get("hashtags", []))
                     entry["axes"]["metadata"] = axis
                     if not axis["ok"]:

@@ -663,13 +663,42 @@ def _rank_segments_with_diversity(segments, limit=None):
     return ranked
 
 
+_ARABIC_NUM_TRANSLATION = str.maketrans({
+    # Arabic-Indic digits U+0660..U+0669 (٠١٢٣٤٥٦٧٨٩)
+    **{ord(src): dst for src, dst in zip("٠١٢٣٤٥٦٧٨٩", "0123456789")},
+    # Persian digits U+06F0..U+06F9 (۰۱۲۳۴۵۶۷۸۹)
+    **{ord(src): dst for src, dst in zip("۰۱۲۳۴۵۶۷۸۹", "0123456789")},
+    # Arabic decimal separator ٫ (U+066B) and the Arabic comma ٬ (U+066C)
+    # — Arabic/Darija LLM output routinely uses both as a decimal point.
+    0x066B: ".",
+    0x066C: ".",
+})
+
+
+def _normalize_timestamp_text(value):
+    """Translate Arabic-Indic/Persian digits and Arabic decimal marks to ASCII.
+
+    Arabic-language LLMs often emit timestamps such as ``٩:٥٠`` or ``١٢٫٥``;
+    without this translation ``int()``/``float()`` reject them and the
+    segment silently falls back to default timings.
+    """
+    return str(value).translate(_ARABIC_NUM_TRANSLATION)
+
+
 def _parse_segment_time(value, default=0.0):
-    """Parse seconds from AI timestamps without treating a missing ref as zero."""
+    """Parse seconds from AI timestamps without treating a missing ref as zero.
+
+    Arabic-Indic (٠-٩) and Persian (۰-۹) digits are translated to ASCII
+    before parsing, and the Arabic decimal separator ٫ (U+066B) / Arabic
+    comma ٬ (U+066C) count as decimal points. mm:ss and h:mm:ss both parse
+    after translation: ``٩:٥٠`` → 9 min + 50 s = 590 s, ``1:٩٠`` → 1 min +
+    90 s = 150 s. Genuinely malformed input still falls back to ``default``.
+    """
     if value is None or value == "":
         return float(default)
     if isinstance(value, (int, float)):
         return max(0.0, float(value))
-    text = str(value).strip().lower()
+    text = _normalize_timestamp_text(str(value).strip().lower())
     match = re.search(r"([-+]?\d+(?:\.\d+)?)\s*(?:s|sec|seconds)?", text)
     if ":" in text:
         parts = text.split(":")
@@ -707,6 +736,51 @@ def segments_manifest_fingerprint(segments):
         })
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def source_video_fingerprint(path):
+    """Cheap staleness fingerprint of a source video file: sha1("name|size|mtime_ns").
+
+    Uses only ``os.stat`` metadata — no file content is read, so this is safe
+    to call on every pipeline stage. Returns None when the path is missing or
+    unreadable.
+
+    main_improved.py embeds this value as ``source_meta.source_video_fp`` when
+    it saves the AI-generated segment windows, and compares it on reuse: a
+    changed/re-exported input video produces a different fingerprint and
+    forces regeneration instead of silently reusing stale AI windows against
+    new footage.
+    """
+    try:
+        if not path:
+            return None
+        stat = os.stat(path)
+    except (OSError, TypeError, ValueError):
+        return None
+    name = os.path.basename(str(path))
+    size = getattr(stat, "st_size", 0)
+    mtime_ns = getattr(stat, "st_mtime_ns", None)
+    if mtime_ns is None:  # tolerate minimal fake stat objects in tests
+        mtime_ns = int(getattr(stat, "st_mtime", 0.0) * 1_000_000_000)
+    payload = "{}|{}|{}".format(name, size, mtime_ns)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def segments_source_fingerprint(data):
+    """Read the embedded source-video fingerprint from a saved segments payload.
+
+    Returns ``data["source_meta"]["source_video_fp"]`` when present, else
+    None (missing payload / missing nested dicts are tolerated). Compare this
+    against ``source_video_fingerprint(current_input_video)`` before reusing
+    previously saved AI windows: a mismatch means the input video changed and
+    the old segment list is stale.
+    """
+    if not isinstance(data, dict):
+        return None
+    source_meta = data.get("source_meta")
+    if not isinstance(source_meta, dict):
+        return None
+    return source_meta.get("source_video_fp")
 
 
 def deduplicate_segments(segments):
@@ -836,6 +910,29 @@ def snap_segment_boundaries(start_time, end_time, transcript_segments):
     return snapped_start, snapped_end
 
 
+def _has_any_anchor(segment):
+    """Return True only when a raw candidate carries at least one placement anchor.
+
+    Anchors are: a non-empty ``start_time_ref`` (other than the LLM "(0s)"
+    sentinel, which the pipeline already treats as "no timestamp found"), an
+    explicit numeric ``start_time``/``end_time``, or non-empty
+    ``start_text``/``end_text``. A candidate with NONE of these has nothing to
+    align against — the old code fabricated a window at the video head
+    (0, min_duration) and produced bogus clips. A numeric ``0`` IS an anchor
+    (an intentional start at the video head must not be discarded).
+    """
+    if not isinstance(segment, dict):
+        return False
+    ref = segment.get("start_time_ref")
+    if ref not in (None, "", "(0s)") and str(ref).strip():
+        return True
+    for key in ("start_time", "end_time", "start_text", "end_text"):
+        value = segment.get(key)
+        if value is not None and str(value).strip():
+            return True
+    return False
+
+
 def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True):
     """
     Aligns raw AI segments (with reference tags) to actual transcript timestamps.
@@ -869,6 +966,10 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     print(f"[DEBUG] Matching {len(all_segments)} raw segments to timestamps...")
     
     for seg in all_segments:
+        if not _has_any_anchor(seg):
+            print(f"[WARN] Skipping unanchorable segment (no start/end time or start/end text): "
+                  f"'{seg.get('title', 'Untitled')}' — nothing to align, window would be fabricated.")
+            continue
         try:
             # 1. Parse Reference Time
             ref_time_str = seg.get('start_time_ref')
@@ -932,7 +1033,7 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             else:
                 end_text_target = _normalized_match_text(seg.get('end_text'))
                 final_end_time = -1
-                if match_start_idx != -1:
+                if match_start_idx != -1 and end_text_target:
                     search_end_limit = min(len(transcript_segments), match_start_idx + 200)
                     best_index, best_similarity = -1, 0.0
                     for i in range(match_start_idx, search_end_limit):
@@ -943,7 +1044,25 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                             best_similarity, best_index = similarity, i
                         if best_similarity >= 0.999:
                             break
-                    if end_text_target and best_similarity >= 0.55:
+                    if best_index == match_start_idx and best_similarity >= 0.99:
+                        # start_text and end_text are the SAME repeated
+                        # catchphrase: the start line itself scores 1.0 and
+                        # the clip would collapse to a ~0s window before the
+                        # blind min-extension drags it past the real ending.
+                        # Re-search strictly AFTER the start line for the
+                        # intended later occurrence.
+                        later_index, later_similarity = -1, 0.0
+                        for i in range(match_start_idx + 1, search_end_limit):
+                            similarity = _text_similarity(
+                                end_text_target,
+                                _normalized_match_text(transcript_segments[i]['text']))
+                            if similarity > later_similarity:
+                                later_similarity, later_index = similarity, i
+                            if later_similarity >= 0.999:
+                                break
+                        if later_index != -1 and later_similarity >= 0.55:
+                            final_end_time = transcript_segments[later_index]['end']
+                    elif best_similarity >= 0.55:
                         final_end_time = transcript_segments[best_index]['end']
                 if final_end_time == -1:
                     final_end_time = final_start_time + tempo_minimo
@@ -1004,7 +1123,7 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             if isinstance(hashtags, str):
                 hashtags = [h.strip().lstrip('#') for h in re.split(r'[,\s]+', hashtags) if h.strip()]
             recommended = seg.get('recommended_title') or _choose_recommended_title(seg)
-            processed_segments.append({
+            segment_entry = {
                 "title": seg.get('title', 'Viral Segment'),
                 "start_time": final_start_time,
                 "end_time": final_end_time,
@@ -1028,7 +1147,16 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 "recommended_title": recommended,
                 "title_quality_score": _title_quality_score(recommended),
                 "window_fingerprint": _segment_window_fingerprint(final_start_time, final_end_time),
-            })
+            }
+            if duration < tempo_minimo:
+                # The whole transcript is shorter than the requested minimum
+                # (or the window is pinned against the transcript edge), so
+                # the under-min clip is transcript-limited, not a bug. Flag it
+                # so downstream stages can decide instead of silently emitting
+                # an under-length clip.
+                segment_entry["under_min"] = True
+                segment_entry["transcript_limited"] = True
+            processed_segments.append(segment_entry)
 
         except Exception as e:
             print(f"[WARN] Error processing segment {seg}: {e}")
@@ -1064,6 +1192,50 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     final_result['segments'] = validated_segments
     
     return final_result
+
+
+def finalize_top_segments(segments, requested_count):
+    """Return the top ``requested_count`` segments in final export/editorial order.
+
+    Ordering contract (used by main_improved.py when persisting the final
+    list):
+    * Primary: entries carrying a ``candidate_rank`` (the diversity order
+      assigned by ``_rank_segments_with_diversity``) sorted by that rank
+      ascending.
+    * Secondary: entries WITHOUT ``candidate_rank`` (legacy/externally-built
+      candidates) come AFTER all ranked entries, ordered by
+      ``selection_score`` descending, then ``score`` descending.
+    * Ties of any kind keep their original list order (stable).
+    Never raises: ``requested_count <= 0`` (or an unparsable count) returns
+    ``[]``, and a count larger than the list returns the whole ordered list.
+    """
+    try:
+        count = int(requested_count)
+    except (TypeError, ValueError):
+        return []
+    if count <= 0:
+        return []
+
+    ranked, legacy = [], []
+    for item in list(segments or []):
+        if isinstance(item, dict) and item.get("candidate_rank") is not None:
+            ranked.append(item)
+        else:
+            legacy.append(item)
+
+    def _as_float(value, default=0.0):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    # Both sorts are stable, so equal keys keep the original list order.
+    ranked.sort(key=lambda item: _as_float(item.get("candidate_rank")))
+    legacy.sort(key=lambda item: (
+        -_as_float(item.get("selection_score")),
+        -_as_float(item.get("score")),
+    ))
+    return (ranked + legacy)[:count]
 
 
 def segment_titles(segment):

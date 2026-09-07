@@ -25,12 +25,25 @@ import json
 import os
 import re
 
+# New-title helpers (stdlib-only) used by the Arabic rules / axis checks.
+try:
+    from scripts.title_text import (
+        count_emoji,
+        detect_text_script,
+        scripts_match,
+    )
+except ImportError:  # allow `python scripts/metadata_compliance.py` standalone
+    from title_text import count_emoji, detect_text_script, scripts_match
+
 # ---------------------------------------------------------------------------
 # Default rules
 # ---------------------------------------------------------------------------
 
 # severity levels: low (advisory) < medium (flag for review) < high (block)
 SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3}
+
+# Emoji budget for title+caption (advisory; see metadata_axis()).
+MAX_METADATA_EMOJI = 3
 
 # Hashtag prefixes that are almost always policy-hostile for viral channels.
 BANNED_HASHTAG_TERMS = [
@@ -73,6 +86,28 @@ PATTERN_RULES = [
     (r"\b(not (a )?(scam|clickbait))\b", "deceptive", "low"),
     (r"\b(leaked|hacked|secret) (video|footage|audio)\b", "deceptive", "medium"),
     (r"\b(goes (viral|insane)|watch before (it'?s|it is) deleted)\b", "deceptive", "low"),
+    # --- Arabic exaggerated clickbait (MSA + Darija + Egyptian) ---
+    # Arabic has no letter case, and _find_patterns() lowercases the text
+    # before matching, so the plain phrase is written as-is. No \b word
+    # boundaries here: Arabic clitics (و/ف/الـ/بـ) join words, so boundaries
+    # are unreliable; the phrase itself is the signal (re.search substring).
+    # Severity is low: exaggerated titles are advisory, like the English
+    # clickbait rules above.
+    (r"لن تصدق", "clickbait", "low"),                      # you won't believe
+    (r"لن تتوقع", "clickbait", "low"),                     # you won't expect
+    (r"لن يصدق (أحد|احد)", "clickbait", "low"),            # no one will believe
+    (r"صادم", "clickbait", "low"),                         # shocking
+    (r"لا يفوتك", "clickbait", "low"),                     # don't miss it
+    (r"شاهد قبل الحذف", "clickbait", "low"),               # watch before it's gone
+    (r"الحقيقة التي يخفونها", "clickbait", "low"),         # the truth they hide
+    (r"ماشي تصدق", "clickbait", "low"),                    # Darija: you won't believe
+    (r"مش هتصدق", "clickbait", "low"),                     # Egyptian: you won't believe
+    (r"خطير جدا", "clickbait", "low"),                     # very dangerous
+    (r"ممنوع على الكبار", "clickbait", "low"),             # adults-only bait
+    # --- Arabic engagement bait ---
+    (r"اكتب (نعم|لا) في التعليقات", "engagement_bait", "low"),  # comment YES/NO below
+    (r"علق ب", "engagement_bait", "low"),                  # comment with ...
+    (r"اشترك في القناة", "engagement_bait", "low"),        # subscribe to the channel
 ]
 
 # Hashtags are lower-cased before matching, so rules use lowercase here.
@@ -225,15 +260,58 @@ def check_metadata(title, caption, hashtags, extra_rules_path=None):
     }
 
 
+def check_title_language(title, caption):
+    """Low-severity finding when the title script contradicts the caption.
+
+    A title whose script clashes with the caption's (e.g. an English title on
+    an Arabic channel/video) is an audience mismatch — publish_panel ships the
+    title to viewers who read the caption. Mixed-script and empty sides are
+    tolerated (see ``title_text.scripts_match``). Returns a finding dict or
+    None.
+    """
+    if scripts_match(title, caption):
+        return None
+    return {
+        "category": "language_mismatch",
+        "severity": "low",
+        "detail": "title script ({}) conflicts with caption script ({}) — "
+                  "viewers of the caption may not understand the shipped title".format(
+                      detect_text_script(title), detect_text_script(caption)),
+    }
+
+
 def metadata_axis(title, caption, hashtags, extra_rules_path=None):
-    """Risk-scorecard friendly axis: {"ok": bool, "severity": str, "score": int, "findings": [...]}."""
+    """Risk-scorecard friendly axis: {"ok": bool, "severity": str, "score": int, "findings": [...]}.
+
+    Adds two advisory (low-severity) checks on top of check_metadata():
+    title/caption script mismatch (language_mismatch) and > 3 emoji across
+    title+caption (excessive_emoji). Low findings never flip ok/severity/score
+    — exactly like the existing low clickbait findings — so every caller that
+    consumes the axis keeps its previous structure/behavior.
+    """
     res = check_metadata(title, caption, hashtags, extra_rules_path)
+    findings = list(res["findings"])
+
+    lang_finding = check_title_language(title, caption)
+    if lang_finding:
+        findings.append(lang_finding)
+
+    emoji_count = count_emoji(title or "") + count_emoji(caption or "")
+    if emoji_count > MAX_METADATA_EMOJI:
+        findings.append({
+            "category": "excessive_emoji",
+            "severity": "low",
+            "detail": "title+caption contain {} emoji (> {}); some platforms "
+                      "demote or reject emoji-heavy metadata".format(
+                          emoji_count, MAX_METADATA_EMOJI),
+        })
+
     score = {"low": 0, "medium": 40, "high": 80}[res["severity"]]
     return {
         "ok": res["ok"],
         "severity": res["severity"],
         "score": score,
-        "findings": res["findings"],
+        "findings": findings,
     }
 
 

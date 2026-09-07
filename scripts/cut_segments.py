@@ -66,6 +66,27 @@ def _safe_duration(start_seconds, duration_seconds):
     return start_seconds, duration_seconds
 
 
+def _accept_scene_snap(original_duration, new_duration):
+    """Decide whether a scene-snapped window keeps an acceptable duration.
+
+    Snap-to-scene may pull an edge to a distant shot boundary, silently
+    growing (or shrinking) a clip far past its requested length. Accept only
+    when the snapped duration stays within ``[max(1.0, 0.5*orig),
+    max(1.0, 1.5*orig)]`` — the 1.0s floor keeps tiny clips from being judged
+    against a near-zero original. Returns False for unparsable/negative input.
+    """
+    try:
+        original_duration = float(original_duration)
+        new_duration = float(new_duration)
+    except (TypeError, ValueError):
+        return False
+    if original_duration < 0.0 or new_duration < 0.0:
+        return False
+    lower = max(1.0, 0.5 * original_duration)
+    upper = max(1.0, 1.5 * original_duration)
+    return lower <= new_duration <= upper
+
+
 def _process_segment(segment_index, segment, project_folder, input_file, cuts_folder, subs_folder, skip_video, video_codec, video_preset, video_extra_args):
     start_time = segment.get("start_time", segment.get("start", "00:00:00"))
     duration = segment.get("duration", 0)
@@ -242,8 +263,18 @@ def cut(response, project_folder="tmp", skip_video=False, workers=None, source_v
                             s1 = float(seg.get("end_time", s0))
                         except (TypeError, ValueError):
                             continue
+                        original_duration = max(0.0, s1 - s0)
                         new_s0, new_s1 = snap_to_scene(s0, s1, scene_boundaries)
-                        if (new_s0, new_s1) != (s0, s1):
+                        # Bounded drift: accept the snap only when the window
+                        # stays non-empty and its duration stays within
+                        # [0.5x, 1.5x] of the original — otherwise revert to
+                        # the clamped times instead of silently growing or
+                        # crushing the clip on a distant shot boundary.
+                        if (
+                            (new_s0, new_s1) != (s0, s1)
+                            and new_s1 > new_s0
+                            and _accept_scene_snap(original_duration, new_s1 - new_s0)
+                        ):
                             seg["start_time"], seg["end_time"] = new_s0, new_s1
                             seg["scene_snapped"] = True
                             snapped += 1

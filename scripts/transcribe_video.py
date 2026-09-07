@@ -531,9 +531,21 @@ def transcribe(input_file, model_name='large-v3', project_folder='tmp', device='
                 start_segments = parsed
                 alignment_only = True
                 
-                # Forçar EN conforme solicitado pelo usuário para alinhamento
-                detected_language = 'en'
-                print(f"Idioma forçado para alinhamento: {detected_language}")
+                # Script-aware alignment language (was hard-coded 'en'): Arabic
+                # and Moroccan-Darija subtitles used to be forced through the
+                # English wav2vec2 model, which cannot align Arabic script.
+                # Import locally (NOT at module top) so this module still
+                # imports in environments without whisperx/torch.
+                from scripts.subtitle_language import choose_alignment_language
+                subtitle_text = " ".join(
+                    str(item.get("text") or "") for item in parsed)[:2000]
+                detected_language = choose_alignment_language(subtitle_text)
+                if detected_language == 'ar':
+                    print("Legendas em árabe detectadas — alinhamento com o modelo "
+                          "árabe (as legendas árabes NÃO são mais forçadas pelo "
+                          "wav2vec2 inglês).")
+                else:
+                    print(f"Idioma forçado para alinhamento: {detected_language}")
                 
                 print("--- MODO ALINHAMENTO RÁPIDO ATIVADO ---")
         
