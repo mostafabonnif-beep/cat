@@ -166,6 +166,27 @@ def sort_by_proximity(new_faces, old_faces, center_func):
     return new_faces
 
 
+def interpolate_boxes(start_box, end_box, steps, easing="smoothstep"):
+    """Intermediate crop boxes between two target boxes.
+
+    The old linear lerp moved the crop at a robotic constant speed. The
+    default ``smoothstep`` easing (3t² − 2t³) accelerates out of the old
+    framing and decelerates into the new one, so speaker switches and
+    re-framing moves feel intentional instead of mechanical.
+    """
+    start = np.asarray(start_box, dtype=float)
+    end = np.asarray(end_box, dtype=float)
+    steps = max(1, int(steps))
+    frames = []
+    for s in range(steps):
+        t = (s + 1) / steps
+        if easing == "smoothstep":
+            t = t * t * (3.0 - 2.0 * t)
+        interp = (1 - t) * start + t * end
+        frames.append(interp.astype(int).tolist())
+    return frames
+
+
 def smooth_boxes_per_slot(boxes, smoothers, alpha, prev_count, frame_w, frame_h):
     """EMA-smooth every active face slot independently (v7.27).
 
@@ -691,7 +712,7 @@ def generate_short_haar(input_file, output_file, index, project_folder, final_fo
     if not finalize_video(input_file, output_file, index, fps, project_folder, final_folder):
         raise RuntimeError(f"Could not finalize Haar clip {index}: audio/mux validation failed")
 
-def generate_short_insightface(input_file, output_file, index, project_folder, final_folder, face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0):
+def generate_short_insightface(input_file, output_file, index, project_folder, final_folder, face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0, scene_reset=True):
     """Face detection using InsightFace (SOTA)."""
     print(f"Processing (InsightFace): {input_file} | Mode: {face_mode}")
     
@@ -745,6 +766,23 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     speaker_switch_count = 0
     speaker_switch_frames = []
 
+    # Scene-aware crop reset (v7.30): at a camera cut, identities, smoothed
+    # boxes and transitions from the previous shot are meaningless — carrying
+    # them over reads as a jump-cut bug. Detected once per clip (cheap:
+    # OpenCV histogram fallback samples 2 frames/sec when PySceneDetect is
+    # not installed).
+    scene_cut_frames = set()
+    if scene_reset:
+        try:
+            from scripts.scene_detect import find_scene_cuts, scene_boundary_frames
+            scene_cut_frames = scene_boundary_frames(
+                find_scene_cuts(input_file), fps, total_frames)
+            if scene_cut_frames:
+                print(f"DEBUG: scene-aware crop reset armed at {len(scene_cut_frames)} cut(s)")
+        except Exception as e:
+            print(f"DEBUG: scene detection unavailable ({e}); crop reset disabled")
+            scene_cut_frames = set()
+
     # Current state of face mode (1..4). Auto keeps the legacy 1/2 behavior.
     current_num_faces_state = 1
     if str(face_mode) in {"2", "3", "4"}:
@@ -789,6 +827,25 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
 
         if not ret or frame is None:
             break
+
+        # Scene cut: drop ALL carry-over from the previous shot and detect
+        # immediately on the new one. Without this, the tracker keeps
+        # matching faces against old-shot positions, the EMA smoother drags
+        # the crop from the old framing, and the frozen-box fallback can
+        # hold a person who left the screen for up to 3 seconds.
+        if frame_index in scene_cut_frames:
+            face_tracker.reset()
+            active_speaker_selector.reset()
+            for _smoother in face_smoothers:
+                _smoother.reset()
+            smoothed_slots = 0
+            last_detected_faces = None
+            last_frame_face_positions = None
+            transition_frames = []
+            faces_activity_state = []
+            face_drop_misses = 0
+            next_detection_frame = frame_index
+            print(f"DEBUG: Scene cut at frame {frame_index} — crop state reset")
 
         if frame_index >= next_detection_frame and len(transition_frames) == 0:
             # Detect faces
@@ -1295,16 +1352,12 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                              forced_transition = False
 
                     if not transition_frames and forced_transition:
-                        # Transition
-                        start_faces = np.array(last_frame_face_positions)
-                        end_faces = np.array(detections)
-                        
-                        steps = transition_duration
-                        transition_frames = []
-                        for s in range(steps):
-                            t = (s + 1) / steps
-                            interp = (1 - t) * start_faces + t * end_faces
-                            transition_frames.append(interp.astype(int).tolist())
+                        # Smoothstep-eased move (see interpolate_boxes): the
+                        # crop eases out of the old framing and settles into
+                        # the new one instead of a constant-speed pan.
+                        transition_frames = interpolate_boxes(
+                            last_frame_face_positions, detections,
+                            transition_duration)
                         
                         # Optimization removed to avoid "Ambiguous truth value of array" error
                         # if detections == last_detected_faces: caused crash
@@ -1505,7 +1558,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     return "1"
 
 
-def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, segments_data=None, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0):
+def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, segments_data=None, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0, scene_reset=True):
     # Lazy init solutions only when needed to avoid AttributeError if import failed partially
     mp_face_detection = None
     mp_face_mesh = None
@@ -1612,7 +1665,8 @@ def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detec
                                                      active_speaker_decay=active_speaker_decay,
                                                      no_face_mode=no_face_mode,
                                                      smoothing=smoothing, headroom=headroom,
-                                                     face_zoom=face_zoom)
+                                                     face_zoom=face_zoom,
+                                                     scene_reset=scene_reset)
                     if res: detected_mode = res
                     success = True
                 except Exception as e:

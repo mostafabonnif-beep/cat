@@ -126,9 +126,10 @@ def _parse_suggest_response(raw: str):
 # ---------------------------------------------------------------------------
 
 # Hook words matched on WORD boundaries (substring matching used to reward
-# "how" inside "show" or "why" inside "anywhere").
+# "how" inside "show" or "why" inside "anywhere"). Includes Moroccan Darija
+# variants (كيفاش/علاش/شنو/واش...) so dialect content scores like MSA.
 _HOOK_WORDS_RE = re.compile(
-    r"(?<!\w)(?:كيف|لماذا|ما هو|طريقة|أفضل|سر|خطأ|جديد"
+    r"(?<!\w)(?:كيف|كيفاش|لماذا|علاش|ما هو|شنو|اشنو|واش|شحال|طريقة|أفضل|سر|خطأ|جديد"
     r"|how|why|best|secret|mistake|trick|tips)(?!\w)")
 
 def _len_score(title: str) -> float:

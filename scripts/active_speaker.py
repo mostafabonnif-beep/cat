@@ -98,6 +98,19 @@ class ActiveSpeakerSelector:
             self.last_switch_frame = int(frame_index)
         self.missing_frames = 0
 
+    def reset(self) -> None:
+        """Forget the current speaker (e.g. on a scene cut).
+
+        A camera change means a new shot with potentially new people; the
+        hysteresis state from the previous shot must not hold the crop on a
+        face that no longer exists or delay the first switch in the new one.
+        """
+        self.current_center = None
+        self.current_track_id = None
+        self.current_score = 0.0
+        self.last_switch_frame = -10**9
+        self.missing_frames = 0
+
     def select(self, faces: List[Face], frame_index: int = 0) -> Tuple[Optional[Face], bool]:
         """Return ``(active_face, switched)`` for the current frame.
 

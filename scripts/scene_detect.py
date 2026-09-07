@@ -172,6 +172,37 @@ def snap_to_scene(start: float, end: float, scenes: list[tuple[float, float]],
     return round(best_start, 2), round(best_end, 2)
 
 
+def scene_boundary_frames(scenes: list[tuple[float, float]], fps: float,
+                          total_frames: int | None = None) -> set[int]:
+    """Frame indices where a NEW scene starts (the cut frame itself).
+
+    The face-crop pipeline uses these to reset identity tracking, box
+    smoothing and transitions exactly at the cut — a crop box carried
+    across a camera change reads as a jump-cut bug, not as tracking.
+
+    The opening scene (start ≈ 0) is not a boundary. ``fps`` is guarded the
+    same way as the fallback detector (broken/VFR metadata → 30 fps).
+    """
+    fps = float(fps or 30.0)
+    if fps <= 0 or fps > 240:
+        fps = 30.0
+    frames: set[int] = set()
+    for start, _end in scenes or []:
+        try:
+            start_s = float(start)
+        except (TypeError, ValueError):
+            continue
+        if start_s <= 0.05:  # the opening scene is not a cut
+            continue
+        idx = int(round(start_s * fps))
+        if idx <= 0:
+            continue
+        if total_frames is not None and idx >= int(total_frames):
+            continue
+        frames.add(idx)
+    return frames
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
