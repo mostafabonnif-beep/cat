@@ -5,6 +5,10 @@ The v7.32 release shipped code+changelog at 7.32 while ``app_version.py``
 (the single source of truth shown in the WebUI) still said 7.30 and
 ``pyproject.toml`` said 7.26. These tests pin the three canonical version
 declarations together so a release can never desync them again.
+
+v7.32.4: the same drift class was found in the three READMEs — their
+"Current Version" lines still advertised 7.26.0 while the code was at
+7.32.x. The README pin test below closes that hole.
 """
 import re
 from pathlib import Path
@@ -43,3 +47,24 @@ def test_app_version_matches_changelog_top_entry():
 
 def test_version_and_alias_stay_in_sync():
     assert app_version.VERSION == app_version.__version__
+
+
+# Each README advertises the running version in a human-language line.
+# (marker text -> file). A stale line is how 7.26.0 survived six releases.
+README_VERSION_MARKERS = {
+    "README.md": "Versão Atual",
+    "README_en.md": "Current Version",
+    "README_ar.md": "الإصدار الحالي",
+}
+
+
+def test_readme_current_version_lines_match_app_version():
+    core = _core(app_version.__version__)
+    for filename, marker in README_VERSION_MARKERS.items():
+        text = (ROOT / filename).read_text(encoding="utf-8")
+        line = next((ln for ln in text.splitlines() if marker in ln), None)
+        assert line, f"{filename} is missing its '{marker}' line"
+        assert core in line, (
+            f"{filename} advertises a stale version: {line.strip()!r} "
+            f"(expected it to contain {core})"
+        )
