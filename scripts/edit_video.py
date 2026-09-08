@@ -20,18 +20,6 @@ except ImportError:
     print("MediaPipe not found. Install with: pip install mediapipe — will fall back to OpenCV Haar Cascade if needed.")
 
 
-def _debug_faces_print(*parts):
-    """Emit a per-frame face/speaker DEBUG line only when explicitly asked.
-
-    Active-speaker DEBUG prints used to fire on *every frame* of a render the
-    moment ``--focus-active-speaker`` was on, flooding logs with megabytes of
-    MAR/score noise. Gate them behind VIRALCUTTER_DEBUG_FACES=1 like the other
-    face debug output.
-    """
-    if os.environ.get("VIRALCUTTER_DEBUG_FACES") == "1":
-        print(*parts)
-
-
 from scripts.active_speaker import ActiveSpeakerSelector, audio_activity_change
 from scripts.audio_analysis import get_audio_energy
 from scripts.face_tracker import FaceTracker
@@ -56,6 +44,17 @@ try:
 except ImportError:
     INSIGHTFACE_AVAILABLE = False
     print("InsightFace not found or error importing. Install with: pip install insightface onnxruntime-gpu")
+
+def _debug_faces_print(*parts):
+    """Emit a per-frame face/speaker DEBUG line only when explicitly asked.
+
+    Active-speaker DEBUG prints used to fire on *every frame* of a render the
+    moment ``--focus-active-speaker`` was on, flooding logs with megabytes of
+    MAR/score noise. Gate them behind VIRALCUTTER_DEBUG_FACES=1 like the other
+    face debug output.
+    """
+    if os.environ.get("VIRALCUTTER_DEBUG_FACES") == "1":
+        print(*parts)
 
 
 # Global cache for encoder

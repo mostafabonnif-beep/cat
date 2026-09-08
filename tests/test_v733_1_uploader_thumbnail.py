@@ -58,7 +58,7 @@ def test_attach_thumbnail_calls_thumbnails_set(tmp_path, monkeypatch):
 
     uploader = YouTubeUploader(str(project))
     monkeypatch.setattr(uploader, "_load_or_create_token", lambda: object())
-    result = uploader.attach_thumbnail("ABC123", str(thumb))
+    uploader.attach_thumbnail("ABC123", str(thumb))
     assert calls["video_id"] == "ABC123"
     assert calls["media_body"].path == str(thumb)
 

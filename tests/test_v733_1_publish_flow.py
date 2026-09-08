@@ -8,9 +8,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
 
-from webui import publish_history, publish_panel as pp
+from webui import publish_history
+from webui import publish_panel as pp
 
 
 def _project(tmp_path):

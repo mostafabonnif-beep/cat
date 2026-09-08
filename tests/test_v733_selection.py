@@ -109,7 +109,6 @@ def test_performance_weights_read_from_project_folder(tmp_path, monkeypatch):
     (project / "performance_insights.json").write_text(
         json.dumps(insights), encoding="utf-8")
 
-    from scripts import performance_weights
     original_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)  # cwd contains NO insights file
