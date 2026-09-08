@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1222%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1238%20passed-brightgreen)](tests/)
 [![Discord](https://dcbadge.limes.pink/api/server/tAdPHFAbud)](https://discord.gg/tAdPHFAbud)<br>
 
 **OUSSAMA Cutter — 100% Free, Local, and Unlimited Open-Source Alternative to Opus Clip**
@@ -162,5 +162,5 @@ ViralCutter is community-maintained. Join us to democratize AI content creation!
 - ✅ **Reproducible installs**: `uv sync` (uses `uv.lock`); the classic `install_dependencies.bat` flow still works.
 
 
-**Current Version**: 7.34.0-pro — polished UI: batch-upload all clips from the panel, 'what's new' card, accent tabs/buttons, finer log styling
+**Current Version**: 7.35.0-pro — speaker intelligence: the tool learns online which face owns the active speaker (voice-face linking, opt-in), plus batch-upload UI and a what's-new card
 *ViralCutter: Because viral clips shouldn't cost a fortune.* 🚀

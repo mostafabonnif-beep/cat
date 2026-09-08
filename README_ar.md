@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1222%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1238%20passed-brightgreen)](tests/)
 
 **البديل المفتوح المصدر المجاني 100% لـ Opus Clip — يعمل محلياً وبلا حدود**
 حوّل فيديوهات يوتيوب الطويلة إلى مقاطع قصيرة فيروسية جاهزة لـ TikTok وInstagram Reels وYouTube Shorts — بذكاء اصطناعي متقدم، وترجمات ديناميكية، وتتبع دقيق للوجه، وترجمة تلقائية. كل شيء يعمل على جهازك.
@@ -408,5 +408,5 @@ Research — مبني على مجموعات موسومة يدوياً من وس�
 - ✅ **تثبيت قابل للتكرار**: `uv sync` (يستخدم `uv.lock`)؛ تدفق `install_dependencies.bat` الكلاسيكي يعمل كما هو.
 
 
-**الإصدار الحالي**: 7.34.0-pro — واجهة مطورة: رفع كل المقاطع كدفعة من الواجهة، بطاقة «ما الجديد»، تبويبات وأزرار بلون مميز، وسجل أدق
+**الإصدار الحالي**: 7.35.0-pro — ذكاء المتحدث: الأداة تتعلّم صوتياً أي وجه يمتلك المتحدث الحالي (ربط الصوت بالوجه، اختياري)، وواجهة بـ رفع الدفعة وبطاقة «ما الجديد»
 *OUSSAMA Cutter: لأن المقاطع الفيروسية لا يجب أن تكلّف ثروة.*

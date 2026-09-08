@@ -758,7 +758,32 @@ def generate_short_haar(input_file, output_file, index, project_folder, final_fo
     if not finalize_video(input_file, output_file, index, fps, project_folder, final_folder):
         raise RuntimeError(f"Could not finalize Haar clip {index}: audio/mux validation failed")
 
-def generate_short_insightface(input_file, output_file, index, project_folder, final_folder, face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0, scene_reset=True):
+def _apply_voice_face_link(faces, speech_link, seconds, boost=2.0, penalty=0.75):
+    """Boost the face that the voice-face link identified as the current speaker.
+
+    ``link.current_speaker_face`` returns (None, 0.0) when the evidence is
+    missing or ambiguous — in that case activity scores stay exactly as the
+    activity hysteresis computed them (the feature is opt-in and never
+    hijacks the framing decision on weak evidence).
+    """
+    if len(faces) < 2 or speech_link is None:
+        return
+    keys = []
+    for index, face in enumerate(faces):
+        key = face.get('_track_id') if face.get('_track_id') is not None else index
+        keys.append(key)
+    winner, confidence = speech_link.current_speaker_face(seconds, keys)
+    if winner is None or confidence <= 0:
+        return
+    for key, face in zip(keys, faces):
+        current = float(face.get('activity_score', 0.0) or 0.0)
+        if key == winner:
+            face['activity_score'] = max(0.0, min(20.0, current + boost))
+        else:
+            face['activity_score'] = max(0.0, min(20.0, current - penalty))
+
+
+def generate_short_insightface(input_file, output_file, index, project_folder, final_folder, face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0, scene_reset=True, voice_face_link=False):
     """Face detection using InsightFace (SOTA)."""
     print(f"Processing (InsightFace): {input_file} | Mode: {face_mode}")
     
@@ -875,6 +900,23 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
         audio_energies = get_audio_energy(input_file, fps)
         if audio_energies is not None:
             print(f"DEBUG: Audio energy extracted. Mean: {np.mean(audio_energies):.4f}")
+
+    # v7.35 voice-face link (opt-in): when the flag is on and audio is
+    # available, learn online which *track* owns the currently active speaker
+    # (pyannote segments when installed, otherwise energy-based speech turns).
+    speech_link = None
+    if (voice_face_link or os.environ.get("VIRALCUTTER_VOICE_FACE_LINK") == "1")             and focus_active_speaker and audio_energies is not None:
+        try:
+            from scripts.speaker_diarization import turns_for_clip
+            from scripts.voice_face_link import VoiceFaceLink
+            speech_turns = turns_for_clip(input_file, audio_energies, fps)
+            if speech_turns:
+                speech_link = VoiceFaceLink(
+                    speech_turns,
+                    seconds_per_frame=(1.0 / float(fps or 30.0)))
+        except Exception as error:
+            _debug_faces_print(
+                "DEBUG: voice-face link unavailable ({}); falling back to activity hysteresis".format(error))
 
     for frame_index in range(total_frames):
         if buffered_frame is not None:
@@ -1083,6 +1125,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                          smoothed_mouth = (0.65 * previous_mouth) + (0.35 * current_mouth)
                          f['mouth_ratio_smooth'] = smoothed_mouth
                          is_talking = smoothed_mouth > active_speaker_mar
+                         f['is_talking'] = is_talking
                          old_val = faces_activity_state[best_idx]['activity']
                          current_audio = audio_energies[frame_index] if (audio_energies is not None and frame_index < len(audio_energies)) else 0.0
                          change = audio_activity_change(
@@ -1098,6 +1141,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                      else:
                          f['mouth_ratio_smooth'] = float(f.get('mouth_ratio', 0.0))
                          is_talking = f['mouth_ratio_smooth'] > active_speaker_mar
+                         f['is_talking'] = is_talking
                          matched_score = 1.0 if is_talking else 0.0
                      
                      f['activity_score'] = matched_score
@@ -1113,6 +1157,14 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                 faces_activity_state = []
 
             faces = valid_faces
+            if speech_link is not None and focus_active_speaker and faces:
+                link_seconds = frame_index * speech_link.seconds_per_frame
+                mouth_flags = {}
+                for _fi, _face in enumerate(faces):
+                    _key = _face.get('_track_id') if _face.get('_track_id') is not None else _fi
+                    mouth_flags[_key] = bool(_face.get('is_talking'))
+                speech_link.update(link_seconds, mouth_flags)
+                _apply_voice_face_link(faces, speech_link, link_seconds)
             if focus_active_speaker and len(faces) >= 2:
                 faces, speaker_switched = order_faces_for_crop(
                     faces, focus_active_speaker=True,
@@ -1662,7 +1714,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
     return "1"
 
 
-def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, segments_data=None, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0, scene_reset=True):
+def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detection_period=None, filter_threshold=0.35, two_face_threshold=0.60, confidence_threshold=0.30, dead_zone=40, focus_active_speaker=False, active_speaker_mar=0.03, active_speaker_score_diff=1.5, include_motion=False, active_speaker_motion_deadzone=3.0, active_speaker_motion_sensitivity=0.05, active_speaker_decay=2.0, segments_data=None, no_face_mode="padding", smoothing=0.55, headroom=0.12, face_zoom=0.0, scene_reset=True, voice_face_link=False):
     # Lazy init solutions only when needed to avoid AttributeError if import failed partially
     mp_face_detection = None
     mp_face_mesh = None
@@ -1770,7 +1822,8 @@ def edit(project_folder="tmp", face_model="insightface", face_mode="auto", detec
                                                      no_face_mode=no_face_mode,
                                                      smoothing=smoothing, headroom=headroom,
                                                      face_zoom=face_zoom,
-                                                     scene_reset=scene_reset)
+                                                     scene_reset=scene_reset,
+                                                     voice_face_link=voice_face_link)
                     if res: detected_mode = res
                     success = True
                 except Exception as e:

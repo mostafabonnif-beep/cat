@@ -612,6 +612,7 @@ def main():
     parser.add_argument("--face-headroom", type=float, default=0.12, help="Talking-head headroom: shift crop up so the face sits in the upper third (0.0-0.35) (default: 0.12)")
     parser.add_argument("--face-zoom", type=float, default=0.0, help="Face-size-aware crop: face fills this fraction of the frame height (0 = legacy full-height crop; 0.33 = classic talking-head zoom)")
     parser.add_argument("--crop-scene-reset", choices=["on", "off"], default="on", help="Reset face tracking/smoothing at scene cuts so the crop never carries old-shot boxes across a camera change (default: on)")
+    parser.add_argument("--voice-face-link", choices=["on", "off"], default="off", help="Learn online which face owns the active speaker (speech turns + mouth activity correlation; pyannote optional) and bias the crop toward it (default: off)")
     parser.add_argument("--skip-prompts", action="store_true", help="Skip interactive prompts and use defaults/existing files")
     parser.add_argument("--video-quality", choices=["best", "1080p", "720p", "480p"], default="best", help="Video download quality")
     parser.add_argument("--skip-youtube-subs", action="store_true", help="Skip downloading YouTube subtitles")
@@ -1663,7 +1664,8 @@ def main():
                         smoothing=float(getattr(args, "face_smoothing", 0.55)),
                         headroom=float(getattr(args, "face_headroom", 0.12)),
                         face_zoom=float(getattr(args, "face_zoom", 0.0)),
-                        scene_reset=(getattr(args, "crop_scene_reset", "on") != "off")
+                        scene_reset=(getattr(args, "crop_scene_reset", "on") != "off"),
+                        voice_face_link=(getattr(args, "voice_face_link", "off") == "on")
             )
 
 
