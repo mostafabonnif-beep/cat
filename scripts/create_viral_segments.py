@@ -732,6 +732,79 @@ def _choose_recommended_title(segment, window_text=None):
     return max(enumerate(clean), key=rank)[1]
 
 
+def quality_gate_config() -> dict:
+    """Editorial quality-gate configuration, read from the environment.
+
+    Returns ``{"enabled": bool, "min": {component: floor}}``. The gate drops
+    candidates whose *genuine* self-evaluations fall below the editorial
+    floor (weak hooks / incomplete narratives / unclear clips are exactly the
+    segments that die in the first seconds on Shorts). Candidates whose
+    components were copied from the virality score (quality_missing) are
+    never gated — there is nothing genuine to measure.
+
+    * ``VIRALCUTTER_QUALITY_GATE=0`` disables the gate (keep everything).
+    * ``VIRALCUTTER_MIN_HOOK`` / ``VIRALCUTTER_MIN_NARRATIVE`` /
+      ``VIRALCUTTER_MIN_CLARITY`` override the individual floors.
+    """
+    def _env_float(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, "").strip())
+        except (TypeError, ValueError):
+            return default
+    enabled = os.getenv("VIRALCUTTER_QUALITY_GATE", "1").strip().lower() not in {
+        "0", "false", "no", "off"}
+    return {
+        "enabled": enabled,
+        "min": {
+            "hook_strength": _env_float("VIRALCUTTER_MIN_HOOK", 20.0),
+            "narrative_completeness": _env_float("VIRALCUTTER_MIN_NARRATIVE", 20.0),
+            "clarity_score": _env_float("VIRALCUTTER_MIN_CLARITY", 20.0),
+        },
+    }
+
+
+def apply_quality_gate(segments, config=None) -> tuple[list, list]:
+    """Drop candidates with genuinely weak editorial self-evaluations.
+
+    Returns ``(kept, dropped)`` where each dropped entry carries
+    ``{title, index, reasons: [..]}``. Segments flagged ``quality_missing``
+    (the AI shipped no self-evaluation, so the components are unverified
+    copies of the virality score) always survive: gating them would be
+    guessing, not quality control.
+    """
+    config = config if config is not None else quality_gate_config()
+    if not config.get("enabled"):
+        return list(segments), []
+    floors = config.get("min") or {}
+    kept, dropped = [], []
+    for index, seg in enumerate(segments or []):
+        if not isinstance(seg, dict):
+            kept.append(seg)
+            continue
+        if seg.get("quality_missing"):
+            kept.append(seg)
+            continue
+        reasons = []
+        for component, floor in floors.items():
+            raw = seg.get(component)
+            if raw is None:
+                continue  # nothing shipped for this axis → not gated
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value < float(floor):
+                label = {"hook_strength": "hook", "narrative_completeness": "narrative",
+                         "clarity_score": "clarity"}.get(component, component)
+                reasons.append("{} {:.0f}<{}".format(label, value, float(floor)))
+        if reasons:
+            dropped.append({"title": str(seg.get("title") or "Untitled"),
+                            "index": index, "reasons": reasons})
+        else:
+            kept.append(seg)
+    return kept, dropped
+
+
 def _selection_score(segment, weights=None):
     """Compute a transparent editorial score without hiding the AI score.
 
@@ -1366,6 +1439,19 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 candidate["selection_breakdown"]["title_boost"] = round(title_boost, 4)
             if abs(duration_bonus) > 1e-9:
                 candidate["selection_breakdown"]["duration_bonus"] = round(duration_bonus, 4)
+
+    # Editorial quality gate: drop candidates whose *genuine* self-evaluated
+    # hook/narrative/clarity sit below the floor (weak clips lose the viewer
+    # in the first seconds). Unverified (quality_missing) candidates are kept.
+    gated, dropped = apply_quality_gate(processed_segments)
+    for drop in dropped:
+        print("[WARN] Quality gate dropped '{}' — {}. Choose stronger moments "
+              "or raise the AI's editorial standards.".format(
+                  drop.get("title"), ", ".join(drop.get("reasons", []))))
+    if dropped:
+        print("[WARN] Quality gate: kept {} of {} candidates (dropped {}).".format(
+            len(gated), len(processed_segments), len(dropped)))
+    processed_segments = gated
 
     # Deduplication: keep one title for each substantially identical source window.
     all_segments = deduplicate_segments(processed_segments)

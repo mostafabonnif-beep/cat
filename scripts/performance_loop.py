@@ -94,8 +94,40 @@ def _published_videos(project_folder: str) -> list[dict[str, Any]]:
             "platform": event.get("platform", "youtube"),
             "published_at": event.get("timestamp"),
             "features": features,
+            # Content markers recorded since v7.33.1 (publish_history.record
+            # extra): hashtags/topic/angle/hook_type + derived title styles.
+            "content": _content_markers(event),
         })
     return published
+
+
+_QUESTION_SUFFIXES = ("?", "؟")
+_ARABIC_HOOK_WORDS = ("كيف", "كيفاش", "علاش", "شنو", "لماذا", "طريقة",
+                      "أفضل", "سر", "خطأ", "جديد", "شحال")
+_LATIN_HOOK_WORDS = ("how", "why", "best", "secret", "mistake", "trick",
+                     "tips", "top")
+
+
+def _content_markers(event: dict[str, Any]) -> dict[str, Any]:
+    """Structured content markers of a publish event (empty-safe)."""
+    title = str(event.get("title") or "").strip()
+    lowered = title.casefold()
+    question = any(ch in title for ch in ("؟", "?"))
+    has_number = any(ch.isdigit() for ch in title)
+    hook_word = any(w in lowered for w in _LATIN_HOOK_WORDS) or any(
+        w in title for w in _ARABIC_HOOK_WORDS)
+    hashtags_raw = str(event.get("hashtags") or "").strip()
+    hashtag_count = len([h for h in re.split(r"[,;\s]+", hashtags_raw)
+                         if h.strip().lstrip("#")]) if hashtags_raw else 0
+    return {
+        "topic": str(event.get("topic") or "").strip(),
+        "angle": str(event.get("angle") or "").strip(),
+        "hook_type": str(event.get("hook_type") or "").strip(),
+        "hashtag_count": hashtag_count,
+        "title_question": bool(question),
+        "title_number": bool(has_number),
+        "title_hook_word": bool(hook_word),
+    }
 
 
 def _fetch_real_metrics(video_ids: list[str]) -> dict[str, dict[str, float]]:
@@ -176,6 +208,93 @@ def _best_hours(measured: list[dict[str, Any]], *, min_samples: int = 2,
     return [h for _mean, h in scored[:top]]
 
 
+def _overall_avg_views(measured: list[dict[str, Any]]) -> float | None:
+    values = [float(item["metrics"]["views"])
+              for item in measured if (item.get("metrics") or {}).get("views") is not None]
+    return round(statistics.fmean(values), 1) if values else None
+
+
+def _category_performance(measured: list[dict[str, Any]], field: str,
+                          *, min_samples: int = 2) -> list[dict[str, Any]]:
+    """Per-value avg views + delta vs the overall average for one marker."""
+    overall = _overall_avg_views(measured)
+    if overall is None:
+        return []
+    buckets: dict[str, list[float]] = {}
+    for item in measured:
+        value = str((item.get("content") or {}).get(field) or "").strip()
+        views = (item.get("metrics") or {}).get("views")
+        if value and views is not None:
+            buckets.setdefault(value, []).append(float(views))
+    results = []
+    for value, values in buckets.items():
+        if len(values) < min_samples:
+            continue
+        average = statistics.fmean(values)
+        delta_pct = round((average - overall) / overall * 100.0, 1) if overall else 0.0
+        results.append({"value": value, "samples": len(values),
+                        "avg_views": round(average, 1), "delta_pct": delta_pct})
+    results.sort(key=lambda item: -abs(item["delta_pct"]))
+    return results
+
+
+def _style_performance(measured: list[dict[str, Any]], field: str,
+                       *, min_samples: int = 2) -> dict[str, Any] | None:
+    """Compare avg views when a boolean title style is present vs absent."""
+    yes, no = [], []
+    for item in measured:
+        views = (item.get("metrics") or {}).get("views")
+        if views is None:
+            continue
+        bucket = yes if (item.get("content") or {}).get(field) else no
+        bucket.append(float(views))
+    if len(yes) < min_samples or len(no) < min_samples:
+        return None
+    avg_yes = statistics.fmean(yes)
+    avg_no = statistics.fmean(no)
+    delta_pct = round((avg_yes - avg_no) / avg_no * 100.0, 1) if avg_no else 0.0
+    return {"style": field, "samples_yes": len(yes), "samples_no": len(no),
+            "avg_views_yes": round(avg_yes, 1), "avg_views_no": round(avg_no, 1),
+            "delta_pct": delta_pct}
+
+
+def _content_insights(measured: list[dict[str, Any]]) -> dict[str, Any]:
+    """Learn which content markers (topics/angles/hook styles) perform."""
+    result: dict[str, Any] = {"overall_avg_views": _overall_avg_views(measured)}
+    categories = {}
+    for field in ("hook_type", "angle", "topic"):
+        rows = _category_performance(measured, field)
+        if rows:
+            categories[field] = rows
+    if categories:
+        result["categories"] = categories
+    styles = []
+    for field in ("title_question", "title_number", "title_hook_word"):
+        row = _style_performance(measured, field)
+        if row:
+            styles.append(row)
+    if styles:
+        styles.sort(key=lambda row: -abs(row["delta_pct"]))
+        result["title_styles"] = styles
+    pairs = [(float((item.get("content") or {}).get("hashtag_count"))
+              if (item.get("content") or {}).get("hashtag_count") is not None else None,
+              float(item["metrics"]["views"]))
+             for item in measured if (item.get("metrics") or {}).get("views") is not None]
+    hashtag_r = _corr(pairs)
+    if hashtag_r is not None:
+        result["hashtag_count_correlation"] = {
+            "r": hashtag_r, "strength": _strength(hashtag_r)}
+    return result
+
+
+def _style_label(field: str) -> str:
+    return {
+        "title_question": "question titles (ending ?/؟)",
+        "title_number": "titles containing a number",
+        "title_hook_word": "titles with a hook word (كيف/لماذا/how/why/…)",
+    }.get(field, field)
+
+
 def analyze(project_folder: str, fetch_live: bool = True) -> dict[str, Any]:
     """Build the performance-loop report. Never raises."""
     project_folder = os.path.abspath(os.fspath(project_folder))
@@ -214,6 +333,35 @@ def analyze(project_folder: str, fetch_live: bool = True) -> dict[str, Any]:
         value = _corr(pairs)
         correlations[feature] = {"vs_views": value, "strength": _strength(value)}
     report["correlations"] = correlations
+
+    # Content-aware learning (v7.33.2): which hook types / angles / topics /
+    # title styles actually brought views. Only meaningful once clips carry
+    # the content markers (publish_history events recorded since v7.33.1).
+    content = _content_insights(measured)
+    report["content_insights"] = content
+    overall = content.get("overall_avg_views")
+    if overall is not None:
+        for field, rows in (content.get("categories") or {}).items():
+            for row in rows[:3]:
+                direction = "+" if row["delta_pct"] >= 0 else ""
+                report["insights"].append(
+                    "{}={}: avg {} views ({} vs overall, n={})".format(
+                        field, row["value"], row["avg_views"],
+                        "{}{}%".format(direction, row["delta_pct"]), row["samples"]))
+        for row in content.get("title_styles") or []:
+            direction = "+" if row["delta_pct"] >= 0 else ""
+            report["insights"].append(
+                "{}: {} views vs {} without ({}%, n={} vs {})".format(
+                    _style_label(row["style"]), row["avg_views_yes"],
+                    row["avg_views_no"], "{}{}".format(direction, row["delta_pct"]),
+                    row["samples_yes"], row["samples_no"]))
+        hashtag = content.get("hashtag_count_correlation") or {}
+        if hashtag.get("r") is not None and hashtag.get("strength") not in {
+                "negligible", "insufficient_data"}:
+            report["insights"].append(
+                "hashtag count vs views: r={} ({})".format(
+                    hashtag["r"], hashtag["strength"]))
+
     best_hours = _best_hours(measured)
     if best_hours:
         report["best_hours"] = best_hours
