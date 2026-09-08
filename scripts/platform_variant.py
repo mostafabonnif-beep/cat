@@ -36,6 +36,11 @@ except ImportError:
 VARIANT_POLICIES = ("off", "auto", "always")
 # Platforms whose feeds aggressively throttle re-uploads of identical bytes.
 VARIANT_PLATFORMS = {"tiktok", "instagram", "reels"}
+# Distinctness verification (v7.33.3): a variant whose perceptual similarity
+# to the original stays above this is not "a different copy" yet - retry with
+# another seed, up to VERIFY_ATTEMPTS total renders.
+VERIFY_MAX_SIMILARITY = 0.50
+VERIFY_ATTEMPTS = 4
 
 
 def _now() -> str:
@@ -180,8 +185,15 @@ def maybe_variant(project_path: str, video_path: str, target_platform: str,
                   events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Apply ``plan_variant`` when needed and render the variant file.
 
-    Non-fatal: any transform failure falls back to the original path with an
-    explanatory ``reason`` — publishing is never hard-blocked by this module.
+    Since v7.33.3 the render is **verified distinct**: after transforming,
+    the variant is visually compared with the original clip (perceptual
+    d-hash fingerprint). While the variant is still too similar, new seeds
+    are tried (up to ``VERIFY_ATTEMPTS``); the first sufficiently distinct
+    copy wins. Verification needs OpenCV — when it is unavailable the first
+    variant is accepted as best-effort (never a hard block).
+
+    Non-fatal overall: a transform failure falls back to the original path
+    with an explanatory ``reason``.
     """
     decision = plan_variant(project_path, video_path, target_platform, policy, events)
     if decision["action"] != "variate":
@@ -191,23 +203,51 @@ def maybe_variant(project_path: str, video_path: str, target_platform: str,
         directory = variant_dir or os.path.join(str(project_path), "variants")
         os.makedirs(directory, exist_ok=True)
         stem, ext = os.path.splitext(os.path.basename(str(video_path)))
-        seed = int(decision["seed"])
-        output_path = os.path.join(directory, "{}__{}_{}.mp4".format(stem, target_platform, seed))
-        result = originality.transform_with_seed(
-            str(video_path), output_path, seed=seed, preset=decision.get("preset"),
-            ffmpeg=ffmpeg)
-        if not result.get("ok"):
-            decision["reason"] = "variant transform reported failure: {}".format(result)
+        base_seed = int(decision["seed"])
+        verify = str(os.getenv("VIRALCUTTER_VARIANT_VERIFY", "1")).strip().lower() not in {
+            "0", "false", "no", "off"}
+        best_effort = None
+        for attempt_offset in range(VERIFY_ATTEMPTS):
+            seed = base_seed + attempt_offset
+            output_path = os.path.join(directory, "{}__{}_{}.mp4".format(
+                stem, target_platform, seed))
+            result = originality.transform_with_seed(
+                str(video_path), output_path, seed=seed,
+                preset=decision.get("preset") if attempt_offset == 0
+                else originality.build_preset(seed),
+                ffmpeg=ffmpeg)
+            if not result.get("ok") or not os.path.isfile(output_path):
+                continue
+            best_effort = {
+                "path": output_path, "seed": seed,
+                "transforms": result.get("transforms") or [], "similarity": None,
+            }
+            if not verify:
+                break
+            try:
+                comparison = originality.compare_clips(str(video_path), output_path)
+            except Exception:
+                comparison = {}
+            similarity = comparison.get("similarity")
+            best_effort["similarity"] = similarity
+            if similarity is None or float(similarity) <= VERIFY_MAX_SIMILARITY:
+                break  # distinct enough (or unverifiable -> best effort)
+        if best_effort is None:
+            decision["reason"] = "variant transform reported failure; uploading the original"
             decision["action"] = "none"
             decision["path"] = video_path
             return decision
-        if not os.path.isfile(output_path):
-            decision["reason"] = "variant transform produced no output file"
-            decision["action"] = "none"
-            decision["path"] = video_path
-            return decision
-        decision["path"] = output_path
-        decision["transforms"] = result.get("transforms") or []
+        decision["path"] = best_effort["path"]
+        decision["seed"] = best_effort["seed"]
+        decision["transforms"] = best_effort["transforms"]
+        if best_effort.get("similarity") is not None:
+            decision["similarity"] = float(best_effort["similarity"])
+            if float(best_effort["similarity"]) > VERIFY_MAX_SIMILARITY:
+                decision["reason"] = ("best-effort variant: visual similarity {:.2f} after {} "
+                                      "attempts (could not get below {:.2f}) — review before "
+                                      "publishing".format(best_effort["similarity"],
+                                                          VERIFY_ATTEMPTS,
+                                                          VERIFY_MAX_SIMILARITY))
         return decision
     except Exception as error:  # pragma: no cover - depends on local ffmpeg
         decision["reason"] = "variant transform unavailable ({}); uploading the original".format(error)

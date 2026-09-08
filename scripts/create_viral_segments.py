@@ -1439,6 +1439,17 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 candidate["selection_breakdown"]["title_boost"] = round(title_boost, 4)
             if abs(duration_bonus) > 1e-9:
                 candidate["selection_breakdown"]["duration_bonus"] = round(duration_bonus, 4)
+            # v7.33.3 — content-style learning: segments whose hook_type /
+            # angle / topic / title style measured best on THIS channel get a
+            # bounded bonus (performance_weights.style_bonuses).
+            style_map = perf_weights.get("style") or {}
+            if style_map and performance_weights is not None:
+                style_bonus = performance_weights.style_bonus_for(candidate, style_map)
+                if abs(style_bonus) > 1e-9:
+                    candidate["selection_score"] = round(max(0.0, min(100.0,
+                        float(candidate["selection_score"]) + style_bonus)), 1)
+                    candidate["selection_breakdown"]["style_bonus"] = round(style_bonus, 2)
+                    candidate["selection_breakdown"]["style_basis"] = style_map.get("basis", "content_insights")
 
     # Editorial quality gate: drop candidates whose *genuine* self-evaluated
     # hook/narrative/clarity sit below the floor (weak clips lose the viewer

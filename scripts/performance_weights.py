@@ -5,6 +5,12 @@ the observed correlations into small, bounded weight adjustments for
 ``_selection_score`` in create_viral_segments. Weights stay within +/-0.10 so
 the editorial core of the score is never dominated by a thin sample, and the
 report always states how many published clips the learning rests on.
+
+v7.33.3: the same insights file now also carries *content* learning
+(``content_insights`` — which hook types / angles / topics / title styles
+actually brought views on THIS channel). Those become bounded per-segment
+style bonuses, so the next selection round prefers the formulas the
+channel's own data proved winning instead of generic editorial taste.
 """
 from __future__ import annotations
 
@@ -19,6 +25,88 @@ DEFAULT_WEIGHTS = {
 }
 MAX_SHIFT = 0.10
 MIN_SAMPLES = 3
+
+# Content-style learning bounds (v7.33.3). A style must beat the channel
+# average by at least STYLE_MIN_DELTA_PCT before it moves the needle, and no
+# single style can add/remove more than STYLE_MAX_BONUS points so the
+# editorial core of the score always dominates.
+STYLE_MIN_DELTA_PCT = 15.0
+STYLE_MAX_BONUS = 3.0
+
+_HOOK_WORDS = ("كيف", "كيفاش", "علاش", "شنو", "لماذا", "طريقة", "أفضل",
+               "سر", "خطأ", "جديد", "شحال", "how", "why", "best", "secret",
+               "mistake", "trick", "tips", "top")
+
+
+def title_style_flags(title) -> dict[str, bool]:
+    """Boolean title-style markers used by the content-learning loop."""
+    text = str(title or "").strip()
+    lowered = text.casefold()
+    return {
+        "title_question": any(ch in text for ch in ("؟", "?")),
+        "title_number": any(ch.isdigit() for ch in text),
+        "title_hook_word": any(w in lowered for w in _HOOK_WORDS if w.isascii())
+        or any(w in text for w in _HOOK_WORDS if not w.isascii()),
+    }
+
+
+def _style_bonus(delta_pct) -> float:
+    """Bounded bonus from a measured delta vs the channel average."""
+    if delta_pct is None or abs(float(delta_pct)) < STYLE_MIN_DELTA_PCT:
+        return 0.0
+    return round(max(-STYLE_MAX_BONUS, min(STYLE_MAX_BONUS,
+                                           float(delta_pct) / 25.0)), 2)
+
+
+def style_bonuses(insights) -> dict[str, Any]:
+    """Content-insights -> per-value style bonuses (empty when unmeasured).
+
+    Only values with >=2 measured clips and a >=15% delta vs the channel
+    average produce a bonus; no single style may move a score more than
+    STYLE_MAX_BONUS points.
+    """
+    content = (insights or {}).get("content_insights") or {}
+    if not content.get("overall_avg_views"):
+        return {}
+    style: dict[str, Any] = {"basis": "content_insights"}
+    categories = content.get("categories") or {}
+    for field in ("hook_type", "angle", "topic"):
+        by_value = {}
+        for row in categories.get(field) or []:
+            if int(row.get("samples") or 0) < 2:
+                continue
+            value = str(row.get("value") or "")
+            bonus = _style_bonus(float(row.get("delta_pct") or 0.0))
+            if value and bonus:
+                by_value[value] = bonus
+        if by_value:
+            style[field] = by_value
+    for row in content.get("title_styles") or []:
+        marker = str(row.get("style") or "")
+        if marker not in {"title_question", "title_number", "title_hook_word"}:
+            continue
+        bonus = _style_bonus(float(row.get("delta_pct") or 0.0))
+        if bonus:
+            style[marker] = bonus
+    return style
+
+
+def style_bonus_for(segment, style_map) -> float:
+    """Selection-score bonus for one segment under a content style map."""
+    if not style_map:
+        return 0.0
+    bonus = 0.0
+    for field in ("hook_type", "angle", "topic"):
+        value = str(segment.get(field) or "").strip()
+        by_value = style_map.get(field) or {}
+        if value in by_value:
+            bonus += float(by_value[value])
+    title = str(segment.get("recommended_title") or segment.get("title") or "").strip()
+    if title:
+        for marker, present in title_style_flags(title).items():
+            if present and style_map.get(marker):
+                bonus += float(style_map[marker])
+    return round(bonus, 2)
 
 
 def _load(project_folder: str) -> dict[str, Any]:
@@ -64,8 +152,15 @@ def load_weights(project_folder: str | None) -> dict[str, Any]:
     correlations = insights.get("correlations") or {}
     samples = int(insights.get("with_metrics", 0) or 0)
     result["samples"] = samples
-    if samples < MIN_SAMPLES or not correlations:
+    if samples < MIN_SAMPLES:
         return result
+
+    # Content-style learning rides on the same insights file (>=3 measured
+    # clips) — it must apply even when no numeric correlation reached the
+    # reporting threshold yet.
+    style = style_bonuses(insights)
+    if style:
+        result["style"] = style
 
     total_shift = 0.0
     for feature, entry in correlations.items():
