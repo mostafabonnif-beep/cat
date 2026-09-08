@@ -42,7 +42,7 @@ def find_success(project_path, *, platform, video_path):
 
 
 def record(project_path, *, platform, video_path, title, result=None, error=None,
-           privacy_status=None, publish_at=None):
+           privacy_status=None, publish_at=None, extra=None):
     if not project_path or not os.path.isdir(project_path):
         return False
     event = {
@@ -55,6 +55,14 @@ def record(project_path, *, platform, video_path, title, result=None, error=None
         "publish_at": publish_at,
         "file_fingerprint": file_fingerprint(video_path),
     }
+    # Optional structured markers (hashtags, topic/angle/hook_type, variant
+    # info…) so the performance-learning loop can correlate *content* with
+    # outcomes, not just numeric scores. Simple scalars only — never paths.
+    if isinstance(extra, dict):
+        for key in ("hashtags", "topic", "angle", "hook_type",
+                    "thumbnail", "variant_of"):
+            if extra.get(key) is not None:
+                event[key] = str(extra.get(key))[:1000]
     if isinstance(result, dict):
         for key in ("video_id", "url"):
             if result.get(key):

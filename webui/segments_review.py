@@ -59,16 +59,29 @@ def backup_file_path(project_path):
 
 def load_segments(project_path):
     """Return the segments list from a project, or [] if none/invalid."""
+    return (_read_payload(project_path) or {}).get("segments", []) or []
+
+
+def _read_payload(project_path):
+    """Return the full viral_segments.txt payload dict, or None if invalid.
+
+    The file carries top-level metadata (source_meta with source/config
+    fingerprints) next to ``segments``. Writers must preserve those keys —
+    rewriting only ``{"segments": [...]}`` used to silently drop them.
+    """
     path = segments_file_path(project_path)
     if not os.path.exists(path):
-        return []
+        return None
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        segments = data.get("segments", [])
-        return segments if isinstance(segments, list) else []
+        return data if isinstance(data, dict) else None
     except Exception:
-        return []
+        return None
+
+
+def _write_payload(project_path, payload):
+    _atomic_write_json(segments_file_path(project_path), payload)
 
 
 def _fmt_time(seconds):
@@ -258,7 +271,11 @@ def apply_selection(project_path, rows):
     if changed and not os.path.exists(bak_path):
         shutil.copy2(seg_path, bak_path)
 
-    _atomic_write_json(seg_path, {"segments": kept_segments})
+    # Preserve the top-level metadata (source_meta fingerprints, settings)
+    # that rides next to ``segments`` in the file.
+    payload = _read_payload(project_path) or {"segments": kept_segments}
+    payload["segments"] = kept_segments
+    _write_payload(project_path, payload)
 
     # Invalidate stale cuts so the next render respects the new selection
     cuts_invalidated = False
@@ -286,6 +303,59 @@ def restore_all(project_path):
     if os.path.isdir(cuts_dir):
         shutil.rmtree(cuts_dir, ignore_errors=True)
     return True
+
+
+def title_choices_for(project_path, index):
+    """Return (options, current) selectable titles for one segment row.
+
+    ``index`` is the row position (0-based) in the review table / file order.
+    Options = the shipped ``recommended_title``/``title`` plus its A/B
+    ``alt_titles`` — exactly what the LLM offered for that segment.
+    Returns ([], "") when the segment does not exist.
+    """
+    segments = load_segments(project_path)
+    if index is None or index < 0 or index >= len(segments):
+        return [], ""
+    seg = segments[index]
+    current = seg.get("recommended_title") or seg.get("title") or ""
+    alternatives = seg.get("alt_titles") or []
+    if isinstance(alternatives, str):
+        alternatives = [alternatives]
+    options = []
+    for candidate in [current] + list(alternatives):
+        text = str(candidate or "").strip()
+        if text and text not in options:
+            options.append(text)
+    return options, current
+
+
+def choose_title(project_path, index, title):
+    """Persist an A/B (or main) title choice as the segment's publish title.
+
+    The review table displayed ``alt_titles`` but discarding edited cells
+    meant the choice never survived: this is the persisted pick. Returns
+    (ok, message). Only titles the LLM actually offered for that segment are
+    accepted — the choice can never drift from the segment's own content.
+    """
+    segments = load_segments(project_path)
+    if index is None or index < 0 or index >= len(segments):
+        return False, i18n("Segment not found.")
+    title = str(title or "").strip()
+    if not title:
+        return False, i18n("Title is empty.")
+    options, current = title_choices_for(project_path, index)
+    if title not in options:
+        return False, i18n("That title is not among the A/B alternatives of this segment.")
+    if title == current:
+        return True, i18n("Title unchanged: {}").format(title)
+    payload = _read_payload(project_path)
+    if payload is None:
+        return False, i18n("No viral segments file for this project.")
+    payload["segments"][index]["recommended_title"] = title
+    # Keep the *chosen* title visible everywhere the reviewer looks next.
+    payload["segments"][index]["title_chosen"] = title
+    _write_payload(project_path, payload)
+    return True, i18n("Title saved: {}").format(title)
 
 
 def export_publish_metadata(project_path):

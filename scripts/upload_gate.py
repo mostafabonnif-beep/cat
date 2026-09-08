@@ -718,6 +718,27 @@ class YouTubeUploader(_BaseUploader):
                 "video_id": video_id, "url": "https://youtu.be/{}".format(video_id),
                 "privacy_status": privacy, "publish_at": normalized_publish_at}
 
+    def attach_thumbnail(self, video_id, thumbnail_path):
+        """Attach a local image as the video's YouTube thumbnail.
+
+        ``thumbnails().set`` requires the same upload scope the insert used,
+        so no extra OAuth setup is needed. Non-fatal by contract: callers
+        wrap this in try/except — a thumbnail failure never blocks publish.
+        """
+        if not video_id or not thumbnail_path or not os.path.isfile(thumbnail_path):
+            raise ValueError("video_id and an existing thumbnail file are required")
+        creds = self._load_or_create_token()
+        try:
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload
+        except ImportError:
+            raise RuntimeError(
+                "youtube thumbnail needs: pip install -r requirements-upload.txt") from None
+        service = build("youtube", "v3", credentials=creds)
+        media = MediaFileUpload(thumbnail_path, mimetype="image/png")
+        request = service.thumbnails().set(videoId=video_id, media_body=media)
+        request.execute()
+
 
 # ---------------------------------------------------------------------------
 # Shared HTTP helpers (stdlib only — no extra pip deps for the upload stack)

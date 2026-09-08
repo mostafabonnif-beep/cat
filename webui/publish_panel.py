@@ -154,15 +154,18 @@ def segments_for_project(project_path):
 def clip_metadata(project_path, video_path):
     """Full publish metadata for a clip from its viral segment entry.
 
-    Returns a dict with ``title``, ``caption`` and normalized ``hashtags`` —
-    the hashtags the LLM generated for the segment (3-5 tags) were previously
-    dropped on the floor here: they never reached the uploader, so YouTube
-    videos shipped with empty ``tags`` and no #hashtags in the description.
+    Returns a dict with ``title``, ``caption``, normalized ``hashtags`` and
+    the segment's editorial markers (``topic``/``angle``/``hook_type``, for
+    the performance-learning loop) — the hashtags the LLM generated for the
+    segment (3-5 tags) were previously dropped on the floor here: they never
+    reached the uploader, so YouTube videos shipped with empty ``tags`` and
+    no #hashtags in the description.
     """
     idx = clip_index(video_path)
     segments = segments_for_project(project_path)
     if idx is None or idx >= len(segments):
-        return {"title": "", "caption": "", "hashtags": []}
+        return {"title": "", "caption": "", "hashtags": [], "topic": "",
+                "angle": "", "hook_type": ""}
     seg = segments[idx]
     title = seg.get("recommended_title") or seg.get("title") or ""
     caption = seg.get("caption") or ""
@@ -175,7 +178,10 @@ def clip_metadata(project_path, video_path):
         if cleaned and cleaned not in normalized:
             normalized.append(cleaned)
     # YouTube snippet tags are capped at 500 chars total — never flood them.
-    return {"title": title, "caption": caption, "hashtags": normalized[:15]}
+    return {"title": title, "caption": caption, "hashtags": normalized[:15],
+            "topic": str(seg.get("topic") or ""),
+            "angle": str(seg.get("angle") or ""),
+            "hook_type": str(seg.get("hook_type") or "")}
 
 
 def clip_suggestion(project_path, video_path):
@@ -317,6 +323,21 @@ def seo_title_score(title):
     return {"score": score, "breakdown": result.get("breakdown") or {}}
 
 
+def next_best_publish_at(platform="youtube"):
+    """Nearest future best-time slot (ISO-8601) for a platform, or None.
+
+    Uses the static algorithm window table (seo_titles.suggest_next_slots) —
+    fully offline, deterministic. The publish panel uses it to prefill the
+    schedule field; the autopilot/scheduler can call it too.
+    """
+    try:
+        from scripts import seo_titles
+        slots = seo_titles.suggest_next_slots(str(platform or "youtube").lower(), count=1)
+    except Exception:
+        return None
+    return slots[0] if slots else None
+
+
 def _seo_advisory_line(title):
     """One human line summarizing the SEO check of a publish title."""
     check = seo_title_score(title)
@@ -376,6 +397,52 @@ def _polish_upload_allowed(project_path, video_path):
                 return True, ""
             return False, "final_polished output is fallback/failed/invalid according to polish_report.json"
     return False, "final_polished output has no matching entry in polish_report.json"
+
+
+def _thumbnail_paths_for(project_path, video_path):
+    """Candidate thumbnail locations for a clip, in preference order."""
+    stem = os.path.splitext(os.path.basename(video_path or ""))[0]
+    index = clip_index(video_path)
+    directory = os.path.join(project_path, "thumbnails")
+    candidates = []
+    for name in ("{}.png".format(stem), "{}_thumbnail.png".format(stem),
+                 "{}.jpg".format(stem), "{}_thumbnail.jpg".format(stem)):
+        candidates.append(os.path.join(directory, name))
+    if index is not None:
+        for name in ("{:03d}_thumbnail.png".format(index),
+                     "{:03d}_thumbnail.jpg".format(index),
+                     "{:03d}.png".format(index)):
+            candidates.append(os.path.join(directory, name))
+    seen = []
+    for candidate in candidates:
+        if candidate not in seen and os.path.isfile(candidate):
+            seen.append(candidate)
+    return seen
+
+
+def _thumbnail_for_clip(project_path, video_path, title=""):
+    """Resolve an existing thumbnail, or auto-generate one (best-effort).
+
+    Returns a path (str) or None. Generation is opt-out via
+    ``VIRALCUTTER_UPLOAD_THUMBNAIL=0``; a missing Pillow/ffmpeg/frame simply
+    returns None — attaching a thumbnail must never block publishing.
+    """
+    existing = _thumbnail_paths_for(project_path, video_path)
+    if existing:
+        return existing[0]
+    if os.getenv("VIRALCUTTER_UPLOAD_THUMBNAIL", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    stem = os.path.splitext(os.path.basename(video_path or ""))[0]
+    output = os.path.join(project_path, "thumbnails", "{}.png".format(stem))
+    try:
+        from scripts import thumbnail_generator
+        result = thumbnail_generator.generate_thumbnail(
+            video_path, title=str(title or "")[:80], out=output, at_seconds=0.0)
+        if result.get("ok") and os.path.isfile(output):
+            return output
+    except Exception:
+        pass
+    return None
 
 
 def _upload_worker(project_path, platform, video_path, title, caption,
@@ -509,9 +576,40 @@ def _upload_worker(project_path, platform, video_path, title, caption,
         uploader.validate_video = True
         result = uploader.upload(upload_video, title, caption, hashtags,
                                  index=clip_index(upload_video), **upload_kwargs)
+
+        # Attach a project thumbnail to the fresh YouTube video (best-effort,
+        # never blocking): thumbnails drive CTR, and the generator existed
+        # standalone since v7.23 without ever reaching the upload.
+        thumb_attached = False
+        if (platform == "youtube" and not dry_run
+                and (result or {}).get("video_id") is not None):
+            thumb_path = _thumbnail_for_clip(project_path, upload_video, title)
+            attach = getattr(uploader, "attach_thumbnail", None)
+            if thumb_path and callable(attach):
+                try:
+                    attach(str(result.get("video_id")), thumb_path)
+                    thumb_attached = True
+                    emit("[thumbnail] ✅ صورة مصغرة مرفوعة مع الفيديو: {}".format(
+                        os.path.basename(thumb_path)))
+                except Exception as exc:
+                    emit("[thumbnail] ⚠️ تعذّر رفع الصورة المصغرة (لا يمنع النشر): {}".format(
+                        str(exc)[:200]))
+
+        meta = clip_metadata(project_path, video_path)
+        record_extra = {
+            "hashtags": ",".join(hashtags or meta.get("hashtags") or []),
+            "topic": meta.get("topic") or "",
+            "angle": meta.get("angle") or "",
+            "hook_type": meta.get("hook_type") or "",
+        }
+        if thumb_attached:
+            record_extra["thumbnail"] = os.path.basename(thumb_path)
+        if upload_video != video_path:
+            record_extra["variant_of"] = os.path.basename(video_path)
         publish_history.record(project_path, platform=platform, video_path=upload_video,
                                title=title, result=result,
-                               privacy_status=privacy_status, publish_at=publish_at)
+                               privacy_status=privacy_status, publish_at=publish_at,
+                               extra=record_extra)
         try:
             from webui import project_store
             project_store.update_manifest(

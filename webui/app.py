@@ -2067,6 +2067,18 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 review_render_btn = gr.Button(i18n("Render Selected Segments"), variant="primary")
             review_status = gr.Markdown()
             with gr.Row():
+                with gr.Column(scale=1, min_width=140):
+                    review_ab_row = gr.Number(label=i18n("Segment # (row)"), value=1,
+                                              precision=0, minimum=1, interactive=True)
+                with gr.Column(scale=4, min_width=360):
+                    review_ab_title = gr.Dropdown(label=i18n("A/B title choice"),
+                                                  choices=[], interactive=True)
+                with gr.Column(scale=2, min_width=220):
+                    review_ab_pick_btn = gr.Button("✅ " + i18n("Adopt A/B title"),
+                                                   variant="primary")
+                    review_ab_refresh_btn = gr.Button(i18n("Refresh choices"), size="sm")
+            review_ab_status = gr.Markdown()
+            with gr.Row():
                 review_export_btn = gr.Button(i18n("Export Publish Metadata"))
             review_export_out = gr.Textbox(label=i18n("Publish Metadata"), lines=8, interactive=False)
             with gr.Row():
@@ -2119,6 +2131,56 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 if not path:
                     return i18n("No viral segments found in this project.")
                 return text
+
+            def review_ab_options(project_name, number):
+                """Populate the A/B dropdown for one review-table row."""
+                if not project_name:
+                    return gr.update(choices=[], value=None), ""
+                project_path = _project_path_for_name(project_name)
+                try:
+                    row = max(0, int(number or 1) - 1)
+                except (TypeError, ValueError):
+                    row = 0
+                options, current = segments_review.title_choices_for(project_path, row)
+                info = "**{}:** {}".format(i18n("Current title"), current) if current else ""
+                return gr.update(choices=options, value=current or None), info
+
+            def review_ab_pick(project_name, number, title, df):
+                """Persist the reviewer's A/B choice and refresh the table."""
+                if not project_name:
+                    return None, i18n("Error: No project selected.")
+                if not title:
+                    return None, i18n("Select an A/B title first.")
+                project_path = _project_path_for_name(project_name)
+                try:
+                    row = max(0, int(number or 1) - 1)
+                except (TypeError, ValueError):
+                    return None, i18n("Segment number must be a positive integer.")
+                ok, msg = segments_review.choose_title(project_path, row, str(title))
+                if not ok:
+                    return None, msg
+                segments = segments_review.load_segments(project_path)
+                rows = segments_review.rows_from_segments(
+                    segments, segments_review.load_safety_map(project_path))
+                # Preserve the reviewer's ✓/✗ checkmarks across the refresh.
+                try:
+                    checks = segments_review._rows_to_bool_list(df)
+                except Exception:
+                    checks = []
+                for row_values, keep in zip(rows, checks):
+                    row_values[0] = bool(keep)
+                return rows, "✅ " + msg
+
+            review_ab_row.change(review_ab_options,
+                                 inputs=[review_project_dropdown, review_ab_row],
+                                 outputs=[review_ab_title, review_ab_status])
+            review_ab_refresh_btn.click(review_ab_options,
+                                        inputs=[review_project_dropdown, review_ab_row],
+                                        outputs=[review_ab_title, review_ab_status])
+            review_ab_pick_btn.click(review_ab_pick,
+                                     inputs=[review_project_dropdown, review_ab_row,
+                                             review_ab_title, review_df],
+                                     outputs=[review_df, review_ab_status])
 
             review_refresh_btn.click(library.refresh_projects, outputs=review_project_dropdown)
             review_load_btn.click(load_review_segments, inputs=review_project_dropdown, outputs=[review_df, review_status])
@@ -2290,6 +2352,13 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                         )
 
                     with gr.Row():
+                        pub_best_time_btn = gr.Button(
+                            "🕐 " + i18n("Fill best publish time"), size="sm",
+                            variant="secondary")
+                        pub_best_time_out = gr.Markdown(
+                            i18n("Fills the schedule field with the next best slot for the platform."))
+
+                    with gr.Row():
                         pub_check_oauth_btn = gr.Button("✅ حفظ/التحقق من الملف", variant="secondary")
                         pub_replace_oauth_btn = gr.Button("🔁 استبدال client_secrets", variant="secondary")
                         pub_login_btn = gr.Button("🔐 تسجيل الدخول إلى YouTube", variant="primary")
@@ -2322,23 +2391,24 @@ with gr.Blocks(**_blocks_kwargs) as demo:
 
             def load_publish_clips(project_name, source="auto", specific_file=None):
                 if not project_name:
-                    return gr.update(choices=[], value=None), None, "", ""
+                    return gr.update(choices=[], value=None), None, "", "", ""
                 project_path = _project_path_for_name(project_name)
                 selected = file_inputs.first_path(specific_file)
                 clips = publish_panel.list_clips(project_path, source, selected)
                 if not clips:
-                    return gr.update(choices=[], value=None), None, "", ""
-                title, caption = publish_panel.clip_suggestion(project_path, clips[0])
+                    return gr.update(choices=[], value=None), None, "", "", ""
+                meta = publish_panel.clip_metadata(project_path, clips[0])
                 return (gr.update(choices=clips, value=clips[0]), clips[0],
-                        title, caption)
+                        meta["title"], meta["caption"],
+                        ", ".join(meta["hashtags"]))
 
             def select_publish_clip(project_name, clip_path):
                 if not project_name or not clip_path:
-                    return None, "", "", ""
+                    return None, "", "", "", ""
                 project_path = _project_path_for_name(project_name)
-                title, caption = publish_panel.clip_suggestion(project_path, clip_path)
+                meta = publish_panel.clip_metadata(project_path, clip_path)
                 preview = publish_panel.clip_subtitle_preview(project_path, clip_path)
-                return clip_path, title, caption, preview
+                return clip_path, meta["title"], meta["caption"], preview, ", ".join(meta["hashtags"])
 
             def translate_publish_clip(project_name, clip_path, lang):
                 if not project_name:
@@ -2580,16 +2650,20 @@ with gr.Blocks(**_blocks_kwargs) as demo:
             pub_refresh.click(library.refresh_projects, outputs=pub_project)
             pub_project.change(load_publish_clips,
                                inputs=[pub_project, pub_source, pub_specific_file],
-                               outputs=[pub_clip, pub_preview, pub_title, pub_caption])
+                               outputs=[pub_clip, pub_preview, pub_title, pub_caption,
+                                        pub_hashtags])
             pub_source.change(load_publish_clips,
                               inputs=[pub_project, pub_source, pub_specific_file],
-                              outputs=[pub_clip, pub_preview, pub_title, pub_caption])
+                              outputs=[pub_clip, pub_preview, pub_title, pub_caption,
+                                       pub_hashtags])
             pub_specific_file.change(load_publish_clips,
                                     inputs=[pub_project, pub_source, pub_specific_file],
-                                    outputs=[pub_clip, pub_preview, pub_title, pub_caption])
+                                    outputs=[pub_clip, pub_preview, pub_title, pub_caption,
+                                             pub_hashtags])
             pub_clip.change(select_publish_clip,
                             inputs=[pub_project, pub_clip],
-                            outputs=[pub_preview, pub_title, pub_caption, pub_sub_preview])
+                            outputs=[pub_preview, pub_title, pub_caption, pub_sub_preview,
+                                     pub_hashtags])
             pub_translate_btn.click(translate_publish_clip,
                                     inputs=[pub_project, pub_clip, pub_lang],
                                     outputs=pub_translate_out)
@@ -2644,6 +2718,21 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 lambda f, full: _oauth_status_pair(validate_youtube_oauth(f, full)),
                 inputs=[auto_upload_oauth_file_input, pub_full_oauth],
                 outputs=[pub_oauth_status, auto_upload_channel_status])
+            def fill_best_publish_at(platform):
+                if str(platform or "") == "tiktok":
+                    note = "🧠 TikTok يفضّل أوقات (12-14) و(19-23) يومياً."
+                elif str(platform or "") == "instagram":
+                    note = "🧠 Reels يفضّل (12-14) و(18-21) أيام الأسبوع."
+                else:
+                    note = "🧠 YouTube يفضّل (17-21) أيام الأسبوع و(10-13)/(17-21) العطلات."
+                slot = publish_panel.next_best_publish_at(platform)
+                if not slot:
+                    return gr.update(value=""), note + " لم يُعثر على موعد قادم (تحقق من التاريخ)."
+                return gr.update(value=slot), note + " أقرب موعد مناسب: **{}**".format(slot)
+
+            pub_best_time_btn.click(fill_best_publish_at, inputs=pub_platform,
+                                    outputs=[pub_publish_at, pub_best_time_out])
+
             pub_upload_btn.click(upload_publish_clip,
                                  inputs=[pub_project, pub_platform, pub_clip,
                                          pub_title, pub_caption, pub_hashtags,
