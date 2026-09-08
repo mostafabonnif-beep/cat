@@ -15,6 +15,7 @@ import json
 import math
 import os
 import queue
+import re
 import sys
 import threading
 
@@ -150,14 +151,37 @@ def segments_for_project(project_path):
         return []
 
 
-def clip_suggestion(project_path, video_path):
-    """Suggested title+caption for a clip from its viral segment entry."""
+def clip_metadata(project_path, video_path):
+    """Full publish metadata for a clip from its viral segment entry.
+
+    Returns a dict with ``title``, ``caption`` and normalized ``hashtags`` —
+    the hashtags the LLM generated for the segment (3-5 tags) were previously
+    dropped on the floor here: they never reached the uploader, so YouTube
+    videos shipped with empty ``tags`` and no #hashtags in the description.
+    """
     idx = clip_index(video_path)
     segments = segments_for_project(project_path)
     if idx is None or idx >= len(segments):
-        return "", ""
+        return {"title": "", "caption": "", "hashtags": []}
     seg = segments[idx]
-    return (seg.get("recommended_title") or seg.get("title") or ""), (seg.get("caption") or "")
+    title = seg.get("recommended_title") or seg.get("title") or ""
+    caption = seg.get("caption") or ""
+    hashtags = seg.get("hashtags") or []
+    if isinstance(hashtags, str):
+        hashtags = re.split(r"[,\s]+", hashtags)
+    normalized = []
+    for tag in hashtags:
+        cleaned = str(tag).strip().lstrip("#")
+        if cleaned and cleaned not in normalized:
+            normalized.append(cleaned)
+    # YouTube snippet tags are capped at 500 chars total — never flood them.
+    return {"title": title, "caption": caption, "hashtags": normalized[:15]}
+
+
+def clip_suggestion(project_path, video_path):
+    """Suggested title+caption for a clip from its viral segment entry."""
+    meta = clip_metadata(project_path, video_path)
+    return meta["title"], meta["caption"]
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +292,50 @@ def _title_limit_for_platform(platform):
     return _PUBLISH_TITLE_LIMITS.get(str(platform or "").strip().lower(), 100)
 
 
+def seo_title_score(title):
+    """Offline 0-100 SEO heuristic for a publish title (no network calls).
+
+    Uses the v7.22 SEO engine (scripts/seo_titles.score_title): length sweet
+    spot, hook phrasing, keyword presence and clickbait penalties. Returns
+    None when the title is empty or the engine is unavailable — advisory
+    only, never a hard gate.
+    """
+    title = str(title or "").strip()
+    if not title:
+        return None
+    try:
+        from scripts import seo_titles
+        result = seo_titles.score_title(title)
+    except Exception:
+        return None
+    if not isinstance(result, dict):
+        return None
+    try:
+        score = float(result.get("score"))
+    except (TypeError, ValueError):
+        return None
+    return {"score": score, "breakdown": result.get("breakdown") or {}}
+
+
+def _seo_advisory_line(title):
+    """One human line summarizing the SEO check of a publish title."""
+    check = seo_title_score(title)
+    if check is None:
+        return ""
+    score = check["score"]
+    hints = []
+    breakdown = check.get("breakdown") or {}
+    if breakdown.get("length", 25.0) < 8:
+        hints.append("الطول الأمثل 35-70 حرفاً")
+    if breakdown.get("hook", 0.0) < 4:
+        hints.append("أضف صيغة سؤال أو رقم أو كلمة قوية (كيف/لماذا/سر/خطأ)")
+    if breakdown.get("penalty", 0.0) >= 5:
+        hints.append("تجنب التكرار والعناوين الكبيرة كلها")
+    suffix = (" — " + "؛ ".join(hints)) if hints else ""
+    verdict = "قوي" if score >= 60 else ("متوسط" if score >= 40 else "ضعيف")
+    return "[seo] جودة عنوان SEO: {:.0f}/100 ({}){}".format(score, verdict, suffix)
+
+
 def _publish_result(status, video_path, title="", publish_at=None, **extra):
     result = {
         "status": status,
@@ -313,7 +381,8 @@ def _polish_upload_allowed(project_path, video_path):
 def _upload_worker(project_path, platform, video_path, title, caption,
                    hashtags, dry_run, music_gate, client_secrets_path,
                    privacy_status, publish_at, out_queue, oauth_full_access=False,
-                   require_existing_auth=False, public_confirm=False):
+                   require_existing_auth=False, public_confirm=False,
+                   variant_policy="off"):
     final_result = None
 
     def emit(msg):
@@ -387,15 +456,60 @@ def _upload_worker(project_path, platform, video_path, title, caption,
             finish(_publish_result("skipped_duplicate", video_path, title, publish_at,
                                    prior_id=prior_id, reason="publish_history"))
             return
+
+        # SEO advisory (YouTube only, never blocking): surface the offline
+        # 0-100 SEO score of the effective title before the uploader runs.
+        if platform == "youtube" and title:
+            seo_line = _seo_advisory_line(title)
+            if seo_line:
+                emit(seo_line)
+
+        # Cross-platform republish variance (TikTok/Reels/IG only): when the
+        # same clip was already published on another platform, upload a
+        # genuinely different (seeded) variant instead of the same bytes so
+        # the target feed does not flag duplicate/reused content. Dry runs
+        # only preview the decision — no files are rendered.
+        upload_video = video_path
+        variant_line = ""
+        if str(variant_policy or "off").strip().lower() != "off":
+            try:
+                from scripts import platform_variant
+                if dry_run:
+                    decision = platform_variant.plan_variant(
+                        project_path, video_path, platform,
+                        policy=str(variant_policy or "off"))
+                else:
+                    decision = platform_variant.maybe_variant(
+                        project_path, video_path, platform,
+                        policy=str(variant_policy or "off"))
+                if decision and decision.get("action") == "variate":
+                    if dry_run:
+                        variant_line = ("[variant] سيُرفع هذا المقطع كنسخة مختلفة على {} "
+                                        "(seed {}) بدل البايتات نفسها لتجنب تكرار المحتوى."
+                                        ).format(platform, decision.get("seed"))
+                    else:
+                        upload_video = decision["path"]
+                        variant_line = ("[variant] نسخة مختلفة لمنصة {} جاهزة: {} "
+                                        "(تحويلات: {})".format(
+                                            platform, os.path.basename(upload_video),
+                                            ", ".join(decision.get("transforms") or []) or "بدون"))
+                elif decision and decision.get("reason"):
+                    variant_line = "[variant] {}".format(decision.get("reason"))
+            except Exception as error:
+                variant_line = "[variant] تعذّر التباين المتقاطع للمنصات ({}); سيُرفع الأصل.".format(
+                    str(error)[:200])
+            if variant_line:
+                emit(variant_line)
+
         uploader = ug.UPLOADERS[platform](project_path, **uploader_kwargs)
         if require_existing_auth and platform == "youtube":
             uploader.ensure_authenticated()
             emit("[oauth] قناة YouTube متصلة والتوكن صالح قبل الرفع")
         # WebUI uploads must validate the actual rendered file before any API call.
         uploader.validate_video = True
-        result = uploader.upload(video_path, title, caption, hashtags,
-                                 index=clip_index(video_path), **upload_kwargs)
-        publish_history.record(project_path, platform=platform, video_path=video_path,
+        result = uploader.upload(upload_video, title, caption, hashtags,
+                                 index=clip_index(upload_video), **upload_kwargs)
+        publish_history.record(project_path, platform=platform, video_path=upload_video,
                                title=title, result=result,
                                privacy_status=privacy_status, publish_at=publish_at)
         try:
@@ -405,11 +519,12 @@ def _upload_worker(project_path, platform, video_path, title, caption,
                 publish_status=result.get("status", "uploaded"),
                 last_publish={
                     "platform": platform,
-                    "video": os.path.basename(video_path),
+                    "video": os.path.basename(upload_video),
                     "video_id": result.get("video_id"),
                     "url": result.get("url"),
                     "privacy_status": privacy_status,
                     "publish_at": publish_at,
+                    "variant_of": os.path.basename(video_path) if upload_video != video_path else None,
                 },
             )
         except Exception:
@@ -420,7 +535,7 @@ def _upload_worker(project_path, platform, video_path, title, caption,
         base_publish_at = (result or {}).get("publish_at") or publish_at
         extras = {key: value for key, value in (result or {}).items()
                   if key not in {"status", "video", "video_path", "title", "publish_at"}}
-        normalized = _publish_result(status, video_path, title, base_publish_at, **extras)
+        normalized = _publish_result(status, upload_video, title, base_publish_at, **extras)
         emit("✅ {}".format(json.dumps(normalized, ensure_ascii=False)))
         finish(normalized)
     except Exception as e:
@@ -472,7 +587,8 @@ def _upload_worker(project_path, platform, video_path, title, caption,
 def stream_upload(project_path, platform, video_path, title, caption,
                   hashtags, dry_run, music_gate, client_secrets_path=None,
                   privacy_status="private", publish_at=None, oauth_full_access=False,
-                  require_existing_auth=False, public_confirm=False):
+                  require_existing_auth=False, public_confirm=False,
+                  variant_policy="off"):
     """Yield log lines and return one structured result to a batch caller."""
     out_queue = queue.Queue()
     if not video_path or not os.path.exists(video_path):
@@ -484,7 +600,8 @@ def stream_upload(project_path, platform, video_path, title, caption,
         target=_upload_worker,
         args=(project_path, platform, video_path, title, caption,
               hashtags, dry_run, music_gate, client_secrets_path, privacy_status,
-              publish_at, out_queue, oauth_full_access, require_existing_auth, public_confirm),
+              publish_at, out_queue, oauth_full_access, require_existing_auth,
+              public_confirm, variant_policy),
         daemon=True,
     )
     thread.start()
@@ -545,7 +662,8 @@ def stream_upload_batch(project_path, platform, video_paths, dry_run, music_gate
                         client_secrets_path=None, privacy_status="private",
                         publish_at=None, oauth_full_access=False,
                         require_existing_auth=False, public_confirm=False,
-                        schedule_interval_minutes=60, retry_failed_only=False):
+                        schedule_interval_minutes=60, retry_failed_only=False,
+                        variant_policy="off"):
     """Upload every selected clip and persist exact per-clip outcomes."""
     all_paths = [os.path.abspath(os.fspath(path)) for path in (video_paths or [])
                  if path and os.path.isfile(path) and str(path).lower().endswith(".mp4")]
@@ -600,7 +718,8 @@ def stream_upload_batch(project_path, platform, video_paths, dry_run, music_gate
         yield "[schedule] جدولة تلقائية: البداية {} — الفاصل {} دقيقة — {} مقاطع.".format(
             schedule_start.isoformat(), int(interval) if interval.is_integer() else interval, len(paths))
     for number, path in enumerate(paths, 1):
-        title, caption = clip_suggestion(project_path, path)
+        meta = clip_metadata(project_path, path)
+        title, caption, tags = meta["title"], meta["caption"], meta["hashtags"]
         if not title:
             # Filename-derived fallback title. The file itself is untouched;
             # only the *title text* is fitted to the platform cap so a long
@@ -609,14 +728,17 @@ def stream_upload_batch(project_path, platform, video_paths, dry_run, music_gate
             stem = os.path.splitext(os.path.basename(path))[0]
             title = fit_publish_title(stem, _title_limit_for_platform(platform))
         yield "\n[upload] ({}/{}) {}".format(number, len(paths), os.path.basename(path))
+        if tags:
+            yield "[upload] هاشتاغات المقطع: {}".format(
+                " ".join("#" + tag for tag in tags))
         item_publish_at = None
         if schedule_start:
             item_publish_at = (schedule_start + datetime.timedelta(
                 minutes=interval * (number - 1))).isoformat()
         result = yield from stream_upload(
-            project_path, platform, path, title, caption, [], dry_run, music_gate,
+            project_path, platform, path, title, caption, tags, dry_run, music_gate,
             client_secrets_path, privacy_status, item_publish_at, oauth_full_access,
-            require_existing_auth, public_confirm,
+            require_existing_auth, public_confirm, variant_policy,
         )
         result = result or _publish_result("failed", path, title, item_publish_at,
                                            error="missing structured result")

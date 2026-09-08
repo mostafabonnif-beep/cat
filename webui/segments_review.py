@@ -181,6 +181,46 @@ def rows_from_segments(segments, safety_map=None):
     return rows
 
 
+def _renumber_candidate_ranks(segments):
+    """Renumber ``candidate_rank`` 1..N after a manual selection.
+
+    The export order (finalize_top_segments in create_viral_segments) sorts by
+    ``candidate_rank`` first. Deselecting rows used to leave sparse ranks, so
+    the persisted file no longer matched the review order. This restores the
+    invariant: kept order == ranked order == exported order.
+
+    Ranking entries first (by their existing rank), then legacy entries
+    without a rank ordered by selection_score/score — the same ordering
+    contract the exporter uses. Stable.
+    """
+    ranked, legacy = [], []
+    for index, item in enumerate(segments):
+        if isinstance(item, dict) and item.get("candidate_rank") is not None:
+            ranked.append((index, item))
+        else:
+            legacy.append((index, item))
+
+    def _key_score(item, field):
+        try:
+            return float(item.get(field, 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _rank_value(pair):
+        try:
+            return float(pair[1].get("candidate_rank"))
+        except (TypeError, ValueError):
+            return float("inf")
+
+    ranked.sort(key=lambda pair: (_rank_value(pair), pair[0]))
+    legacy.sort(key=lambda pair: (_key_score(pair[1], "selection_score"),
+                                  _key_score(pair[1], "score")), reverse=True)
+    ordered = [item for _, item in ranked + legacy]
+    for rank, item in enumerate(ordered, 1):
+        item["candidate_rank"] = rank
+    return ordered
+
+
 def _rows_to_bool_list(rows):
     """Normalize a Gradio Dataframe value (pandas or list) to a bool list."""
     if rows is None:
@@ -206,6 +246,10 @@ def apply_selection(project_path, rows):
     if not kept_segments:
         kept_segments = segments  # never write an empty selection
         selected = [True] * len(segments)
+
+    # Restore the rank invariant (kept order == export order) and renumber
+    # ranks 1..N so the persisted file matches the review table exactly.
+    kept_segments = _renumber_candidate_ranks(kept_segments)
 
     changed = len(kept_segments) != len(segments)
 

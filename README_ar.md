@@ -1,7 +1,7 @@
 # OUSSAMA Cutter
 [![CI](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml/badge.svg)](https://github.com/mostafabonnif-beep/cat/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1139%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1173%20passed-brightgreen)](tests/)
 
 **البديل المفتوح المصدر المجاني 100% لـ Opus Clip — يعمل محلياً وبلا حدود**
 حوّل فيديوهات يوتيوب الطويلة إلى مقاطع قصيرة فيروسية جاهزة لـ TikTok وInstagram Reels وYouTube Shorts — بذكاء اصطناعي متقدم، وترجمات ديناميكية، وتتبع دقيق للوجه، وترجمة تلقائية. كل شيء يعمل على جهازك.
@@ -408,5 +408,5 @@ Research — مبني على مجموعات موسومة يدوياً من وس�
 - ✅ **تثبيت قابل للتكرار**: `uv sync` (يستخدم `uv.lock`)؛ تدفق `install_dependencies.bat` الكلاسيكي يعمل كما هو.
 
 
-**الإصدار الحالي**: 7.32.4-pro — إنقاذ التفريغ عند نفاد الذاكرة، كشف ffmpeg المكسور وإنقاذه تلقائياً، تأطير واعي بالمشاهد، ومطابقة عربية أعمق
+**الإصدار الحالي**: 7.33.0-pro — اختيار احترافي للمقاطع (snap بعد ضبط المدة، معالجة النوافذ المعكوسة، أوزان الأداء من المشروع نفسه)، وصول الهاشتاغات وفحص SEO إلى الرفع الفعلي، قاعدة معرفة السياسات بمزامنة ذكية، ونسخ مختلفة عند إعادة النشر لمنصة أخرى
 *OUSSAMA Cutter: لأن المقاطع الفيروسية لا يجب أن تكلّف ثروة.*

@@ -1472,7 +1472,8 @@ def main():
                               transcript, 
                               args.min_duration, 
                               args.max_duration, 
-                              output_count=None 
+                              output_count=None,
+                              project_folder=project_folder,
                           )
                           # process_segments returns a fresh dict: re-stamp the
                           # source + settings fingerprints before persisting

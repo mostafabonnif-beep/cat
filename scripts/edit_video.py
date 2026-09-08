@@ -18,6 +18,20 @@ except ImportError:
     mp = None
     MEDIAPIPE_AVAILABLE = False
     print("MediaPipe not found. Install with: pip install mediapipe — will fall back to OpenCV Haar Cascade if needed.")
+
+
+def _debug_faces_print(*parts):
+    """Emit a per-frame face/speaker DEBUG line only when explicitly asked.
+
+    Active-speaker DEBUG prints used to fire on *every frame* of a render the
+    moment ``--focus-active-speaker`` was on, flooding logs with megabytes of
+    MAR/score noise. Gate them behind VIRALCUTTER_DEBUG_FACES=1 like the other
+    face debug output.
+    """
+    if os.environ.get("VIRALCUTTER_DEBUG_FACES") == "1":
+        print(*parts)
+
+
 from scripts.active_speaker import ActiveSpeakerSelector, audio_activity_change
 from scripts.audio_analysis import get_audio_energy
 from scripts.face_tracker import FaceTracker
@@ -905,7 +919,10 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                     pass # print(f"DEBUG: Frame {frame_index} | No Raw Faces")
 
             # --- ACTIVITY / SPEAKER DETECTION ---
-            # (Feature currently disabled for stability - relying on simple size checks)
+            # When --focus-active-speaker is OFF the layout falls back to the
+            # simple size-based heuristic below; when it is ON the per-face
+            # mouth/audio activity path runs and may reorder the faces so the
+            # active speaker owns slot [0].
             last_raw_faces = faces 
             # ------------------------------------
 
@@ -1104,7 +1121,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                 if speaker_switched:
                     speaker_switch_count += 1
                     speaker_switch_frames.append(frame_index)
-                    print(f"DEBUG: Active speaker switched at frame {frame_index}")
+                    _debug_faces_print(f"DEBUG: Active speaker switched at frame {frame_index}")
             
             # v7.27: auto-mode count-down grace (see face_count_hold).
             holding_multi = False
@@ -1145,7 +1162,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                          pos2 = "Top" if y2 < y1 else "Bottom"
                          
                          # Debug Active Speaker
-                         print(f"DEBUG: Frame {frame_index} | {pos1} (MAR: {f1.get('mouth_ratio',0):.3f}, Mov: {f1.get('motion_val',0):.1f}, Score: {score1:.1f}) | {pos2} (MAR: {f2.get('mouth_ratio',0):.3f}, Mov: {f2.get('motion_val',0):.1f}, Score: {score2:.1f})")
+                         _debug_faces_print(f"DEBUG: Frame {frame_index} | {pos1} (MAR: {f1.get('mouth_ratio',0):.3f}, Mov: {f1.get('motion_val',0):.1f}, Score: {score1:.1f}) | {pos2} (MAR: {f2.get('mouth_ratio',0):.3f}, Mov: {f2.get('motion_val',0):.1f}, Score: {score2:.1f})")
 
 
                          # If one is clearly dominant active speaker
@@ -1161,7 +1178,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                              if score2 > score1:
                                  # Swap ensures [0] is the active one for later 1-face crop logic which takes [0]
                                  faces = [f2, f1]
-                             print(f"DEBUG: Active Speaker Focus Triggered! Diff ({diff:.2f}) > Thresh ({active_speaker_score_diff}). Focusing on Face {'2' if score2 > score1 else '1'}.")
+                             _debug_faces_print(f"DEBUG: Active Speaker Focus Triggered! Diff ({diff:.2f}) > Thresh ({active_speaker_score_diff}). Focusing on Face {'2' if score2 > score1 else '1'}.")
                              
                          elif score1 > 4.0 and score2 > 4.0:
                              # Both talking -> 2 faces
@@ -1169,7 +1186,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                              target_faces = 2
                              split_wanted = True
                              decided = True
-                             print("DEBUG: Dual Active Speakers! Both scores > 4.0. Forcing Split Mode.")
+                             _debug_faces_print("DEBUG: Dual Active Speakers! Both scores > 4.0. Forcing Split Mode.")
                          
                          # If scores are low (both silent), fallback to size ratio (decided=False) or force 1 if very silent?
                          # Let's fallback to size.
@@ -1284,7 +1301,7 @@ def generate_short_insightface(input_file, output_file, index, project_folder, f
                 if speaker_switched:
                     speaker_switch_count += 1
                     speaker_switch_frames.append(frame_index)
-                    print(f"DEBUG: Active speaker switched at frame {frame_index} (lookahead)")
+                    _debug_faces_print(f"DEBUG: Active speaker switched at frame {frame_index} (lookahead)")
 
             detections = []
             

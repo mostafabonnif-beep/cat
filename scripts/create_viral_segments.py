@@ -1072,13 +1072,18 @@ def _has_any_anchor(segment):
     return False
 
 
-def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True):
+def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True, project_folder=None):
     """
     Aligns raw AI segments (with reference tags) to actual transcript timestamps.
     Applies constraints, validation, and deduplication.
 
     ``snap_to_boundaries`` (default True) aligns final cut points to sentence
     boundaries derived from transcript pauses, so cuts never split a word.
+
+    ``project_folder`` lets the performance-learning loop
+    (scripts/performance_weights) read ``performance_insights.json`` from the
+    *project* that owns the clips instead of the process working directory.
+    ``None`` keeps the legacy behaviour (current working directory).
     """
     
     all_segments = raw_segments
@@ -1206,8 +1211,23 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 if final_end_time == -1:
                     final_end_time = final_start_time + tempo_minimo
 
+            # Reversed explicit window (end before start). The model's real
+            # intent is the span *between* the two anchors, so swap them into
+            # order instead of silently relocating the cut (the old behaviour
+            # produced a meaningless clip that started at the "end" anchor).
+            if final_end_time < final_start_time:
+                _swapped_start = float(final_start_time)
+                final_start_time = float(final_end_time)
+                final_end_time = _swapped_start
+                print(f"[WARN] Reversed window for '{seg.get('title', 'Untitled')}': "
+                      f"start > end. Swapped to [{final_start_time:.2f}, {final_end_time:.2f}].")
+
             # Keep explicit or text-matched windows inside the actual transcript.
             # This prevents malformed AI timestamps from producing empty or out-of-range clips.
+            # Snapshot the aligned model edges: the min/max clamp below may move
+            # them, and any moved edge must be snapped to a speech boundary too.
+            model_start_time = float(final_start_time)
+            model_end_time = float(final_end_time)
             raw_start_time = float(final_start_time)
             if raw_start_time > transcript_end_time:
                 final_start_time = max(transcript_start_time, transcript_end_time - tempo_minimo)
@@ -1243,9 +1263,13 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             # ends mid-word. Applied after duration clamping so the
             # min/max guarantees above are never violated. Fully explicit
             # numeric windows from the AI are trusted as-is (the documented
-            # contract): snapping is for text-matched and clamp-adjusted
-            # windows whose edges land mid-sentence.
-            if snap_to_boundaries and not (explicit_start and explicit_end):
+            # contract): snapping is for text-matched windows and for
+            # explicit windows whose edges the clamp moved (min extension,
+            # max truncation or transcript pinning) — those adjusted edges
+            # can land mid-word and must be re-snapped.
+            clamp_adjusted = (abs(float(final_start_time) - model_start_time) > 1e-6
+                              or abs(float(final_end_time) - model_end_time) > 1e-6)
+            if snap_to_boundaries and (not (explicit_start and explicit_end) or clamp_adjusted):
                 snapped_start, snapped_end = snap_segment_boundaries(
                     final_start_time, final_end_time, transcript_segments)
                 # Keep the snap only when it stays inside the allowed window.
@@ -1294,6 +1318,18 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 "title_quality_score": _title_quality_score(recommended),
                 "window_fingerprint": _segment_window_fingerprint(final_start_time, final_end_time),
             }
+            # Transparency: when the AI shipped no self-evaluation for the
+            # editorial components, the values above were copied from the raw
+            # virality score. Flag that so the review UI / downstream stages
+            # can show "unverified editorial scores" instead of treating them
+            # as real measurements.
+            _component_keys = ("hook_strength", "narrative_completeness",
+                               "clarity_score", "novelty_score")
+            missing_components = [key for key in _component_keys
+                                  if seg.get(key) is None]
+            if missing_components:
+                segment_entry["quality_missing"] = True
+                segment_entry["missing_components"] = missing_components
             if duration < tempo_minimo:
                 # The whole transcript is shorter than the requested minimum
                 # (or the window is pinned against the transcript edge), so
@@ -1309,13 +1345,27 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             continue
 
     # Add a transparent score before de-duplication and ranking.
-    perf_weights = performance_weights.load_weights(os.getcwd()) if performance_weights else None
+    # The learning loop lives per-project (performance_insights.json), so
+    # read it from the project that owns these clips — os.getcwd() used to
+    # silently miss it for CLI/WebUI runs.
+    weights_folder = project_folder or os.getcwd()
+    perf_weights = performance_weights.load_weights(weights_folder) if performance_weights else None
     for candidate in processed_segments:
         candidate["selection_score"], candidate["selection_breakdown"] = _selection_score(candidate, perf_weights)
         if perf_weights:
+            # Bounded outcome-driven nudges learned from the channel's own
+            # publish history (see performance_weights.py): duration and
+            # title-quality correlation with views. Both stay tiny by design
+            # so editorial ranking is never dominated by a thin sample.
+            duration_bonus = float(perf_weights.get("duration_bonus", 0.0) or 0.0)
+            title_boost = float(perf_weights.get("title_boost", 0.0) or 0.0)
             candidate["selection_score"] = round(max(0.0, min(100.0,
-                float(candidate["selection_score"]) + float(perf_weights.get("duration_bonus", 0.0)))), 1)
+                float(candidate["selection_score"]) + duration_bonus + title_boost)), 1)
             candidate["selection_breakdown"]["performance_basis"] = perf_weights.get("basis", "defaults")
+            if abs(title_boost) > 1e-9:
+                candidate["selection_breakdown"]["title_boost"] = round(title_boost, 4)
+            if abs(duration_bonus) > 1e-9:
+                candidate["selection_breakdown"]["duration_bonus"] = round(duration_bonus, 4)
 
     # Deduplication: keep one title for each substantially identical source window.
     all_segments = deduplicate_segments(processed_segments)
@@ -1791,5 +1841,6 @@ OUTPUT JSON ONLY:
         transcript_segments, 
         tempo_minimo, 
         tempo_maximo, 
-        output_count=candidate_target
+        output_count=candidate_target,
+        project_folder=project_folder,
     )
