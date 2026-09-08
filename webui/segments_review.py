@@ -176,6 +176,13 @@ def rows_from_segments(segments, safety_map=None):
         if isinstance(alternatives, str):
             alternatives = [alternatives]
         alternatives = [str(item).strip() for item in alternatives if str(item).strip() and str(item).strip() != title]
+        reasoning = seg.get("reasoning", "")
+        if seg.get("quality_missing"):
+            # The AI shipped no editorial self-evaluation; hook/clarity/…
+            # values are copies of the virality score. Say so where the
+            # reviewer looks, instead of letting them read as measurements.
+            marker = i18n("⚠️ التقييم التحريري من الذكاء الاصطناعي مفقود — القيم منسوخة من درجة الانتشار.")
+            reasoning = (reasoning + "\n" if reasoning else "") + marker
         rows.append([
             True,
             title,
@@ -183,7 +190,7 @@ def rows_from_segments(segments, safety_map=None):
             _fmt_time(start),
             _fmt_time(end),
             duration,
-            seg.get("reasoning", ""),
+            reasoning,
             seg.get("caption", ""),
             _safety_badge(seg, safety_map or {}),
             safety.get("reason", ""),

@@ -651,5 +651,22 @@
     "Unknown error": "Erro desconhecido",
     "Error": "Erro",
     "Exit code {}": "Código de saída {}",
-    "Technical Details": "Detalhes Técnicos"
+    "Technical Details": "Detalhes Técnicos",
+    "Segment # (row)": "Segmento nº (linha)",
+    "A/B title choice": "Escolha de título A/B",
+    "Adopt A/B title": "Adotar título A/B",
+    "Refresh choices": "Atualizar opções",
+    "Current title": "Título atual",
+    "Select an A/B title first.": "Selecione primeiro um título A/B.",
+    "Segment number must be a positive integer.": "O número do segmento deve ser um inteiro positivo.",
+    "Fill best publish time": "Preencher melhor horário de publicação",
+    "Fills the schedule field with the next best slot for the platform.": "Preenche o campo de agendamento com o próximo melhor horário da plataforma.",
+    "Apply best title to publish field": "Aplicar o melhor título no campo de publicação",
+    "My channel lessons (analytics)": "Lições do meu canal (analytics)",
+    "Segment not found.": "Segmento não encontrado.",
+    "Title is empty.": "Título vazio.",
+    "That title is not among the A/B alternatives of this segment.": "Esse título não está entre as alternativas A/B deste segmento.",
+    "Title unchanged: {}": "Título inalterado: {}",
+    "No viral segments file for this project.": "Nenhum arquivo de segmentos virais para este projeto.",
+    "Title saved: {}": "Título salvo: {}"
 }

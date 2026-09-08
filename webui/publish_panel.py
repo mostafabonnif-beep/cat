@@ -338,6 +338,68 @@ def next_best_publish_at(platform="youtube"):
     return slots[0] if slots else None
 
 
+_STYLE_AR_NAMES = {
+    "title_question": "العناوين بصيغة سؤال (؟)",
+    "title_number": "العناوين التي تحتوي رقماً",
+    "title_hook_word": "العناوين بكلمة خطاف (كيف/لماذا/سر/how/why…)",
+}
+
+
+def format_channel_lessons(project_path):
+    """Read-only Arabic summary of what the channel's analytics taught us.
+
+    Reads ``performance_insights.json`` (written by
+    ``python -m scripts.performance_loop --project X`` after YouTube
+    Analytics is enabled) and renders the content-aware lessons + measured
+    best hours as a human text block for the WebUI. Never raises.
+    """
+    path = os.path.join(project_path, "performance_insights.json")
+    insights = _load_json(path)
+    if not insights:
+        return (
+            "📊 لا يوجد ملف تحليلات بعد في هذا المشروع.\n"
+            "لتفعيل التعلّم من نتائج قناتك:\n"
+            "1) فعّل YouTube Analytics API (نفس إعداد الـ OAuth للرفع).\n"
+            "2) شغّل: python -m scripts.performance_loop --project \"{}\"\n"
+            "3) بعدها سيظهر هنا: أي صيغة عناوين/مواضيع تجلب مشاهدات، "
+            "وأفضل ساعات النشر المقاسة على قناتك.".format(project_path))
+    lines = ["📊 **دروس قناتك (من أداء فيديوهاتك المنشورة):**"]
+    with_metrics = int(insights.get("with_metrics") or 0)
+    lines.append("— الفيديوهات المقاسة: {}".format(with_metrics))
+    content = insights.get("content_insights") or {}
+    overall = content.get("overall_avg_views")
+    if overall is not None:
+        lines.append("— معدل مشاهداتك: {:.0f}".format(float(overall)))
+        categories = content.get("categories") or {}
+        field_names = {"hook_type": "صيغة الخطاف (hook_type)",
+                       "angle": "الزاوية التحريرية (angle)",
+                       "topic": "الموضوع (topic)"}
+        for field, label in field_names.items():
+            rows = categories.get(field) or []
+            if not rows:
+                continue
+            top = sorted(rows, key=lambda row: -abs(row.get("delta_pct") or 0))
+            best = top[0] if top else None
+            if best and (best.get("delta_pct") or 0) > 0:
+                lines.append("• أفضل {}: «{}» — {}% عن معدلك (من {} فيديو)".format(
+                    label, best.get("value"), best.get("delta_pct"),
+                    best.get("samples")))
+        styles = content.get("title_styles") or []
+        if styles:
+            styles = sorted(styles, key=lambda row: -abs(row.get("delta_pct") or 0))
+            winner = styles[0]
+            lines.append("• {}: {} مشاهدة معها مقابل {} بدونها ({}% — {} ضد {} فيديو)".format(
+                _STYLE_AR_NAMES.get(winner.get("style"), winner.get("style")),
+                winner.get("avg_views_yes"), winner.get("avg_views_no"),
+                winner.get("delta_pct"), winner.get("samples_yes"),
+                winner.get("samples_no")))
+    best_hours = insights.get("best_hours")
+    if best_hours:
+        lines.append("— أفضل ساعات النشر المقاسة (بتوقيتك المحلي): {}".format(
+            ", ".join(str(h) for h in best_hours)))
+    return "\n".join(lines)
+
+
 def _seo_advisory_line(title):
     """One human line summarizing the SEO check of a publish title."""
     check = seo_title_score(title)

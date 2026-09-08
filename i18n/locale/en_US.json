@@ -651,5 +651,22 @@
     "Unknown error": "Unknown error",
     "Error": "Error",
     "Exit code {}": "Exit code {}",
-    "Technical Details": "Technical Details"
+    "Technical Details": "Technical Details",
+    "Segment # (row)": "Segment # (row)",
+    "A/B title choice": "A/B title choice",
+    "Adopt A/B title": "Adopt A/B title",
+    "Refresh choices": "Refresh choices",
+    "Current title": "Current title",
+    "Select an A/B title first.": "Select an A/B title first.",
+    "Segment number must be a positive integer.": "Segment number must be a positive integer.",
+    "Fill best publish time": "Fill best publish time",
+    "Fills the schedule field with the next best slot for the platform.": "Fills the schedule field with the next best slot for the platform.",
+    "Apply best title to publish field": "Apply best title to publish field",
+    "My channel lessons (analytics)": "My channel lessons (analytics)",
+    "Segment not found.": "Segment not found.",
+    "Title is empty.": "Title is empty.",
+    "That title is not among the A/B alternatives of this segment.": "That title is not among the A/B alternatives of this segment.",
+    "Title unchanged: {}": "Title unchanged: {}",
+    "No viral segments file for this project.": "No viral segments file for this project.",
+    "Title saved: {}": "Title saved: {}"
 }

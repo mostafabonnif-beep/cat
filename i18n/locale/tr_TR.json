@@ -651,5 +651,22 @@
     "Unknown error": "Bilinmeyen hata",
     "Error": "Hata",
     "Exit code {}": "Çıkış kodu {}",
-    "Technical Details": "Teknik Ayrıntılar"
+    "Technical Details": "Teknik Ayrıntılar",
+    "Segment # (row)": "Bölüm no (satır)",
+    "A/B title choice": "A/B başlık seçimi",
+    "Adopt A/B title": "A/B başlığını benimse",
+    "Refresh choices": "Seçenekleri yenile",
+    "Current title": "Güncel başlık",
+    "Select an A/B title first.": "Önce bir A/B başlığı seç.",
+    "Segment number must be a positive integer.": "Bölüm numarası pozitif tam sayı olmalı.",
+    "Fill best publish time": "En iyi yayın saatini doldur",
+    "Fills the schedule field with the next best slot for the platform.": "Planlama alanını platform için en iyi sonraki zamanla doldurur.",
+    "Apply best title to publish field": "En iyi başlığı yayın alanına uygula",
+    "My channel lessons (analytics)": "Kanalımın dersleri (analytics)",
+    "Segment not found.": "Bölüm bulunamadı.",
+    "Title is empty.": "Başlık boş.",
+    "That title is not among the A/B alternatives of this segment.": "Bu başlık bölümün A/B alternatifleri arasında değil.",
+    "Title unchanged: {}": "Başlık değişmedi: {}",
+    "No viral segments file for this project.": "Bu proje için viral bölüm dosyası yok.",
+    "Title saved: {}": "Başlık kaydedildi: {}"
 }

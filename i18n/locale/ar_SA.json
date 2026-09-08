@@ -651,5 +651,22 @@
     "Unknown error": "خطأ غير معروف",
     "Error": "خطأ",
     "Exit code {}": "رمز الخروج {}",
-    "Technical Details": "التفاصيل التقنية"
+    "Technical Details": "التفاصيل التقنية",
+    "Segment # (row)": "رقم المقطع (الصف)",
+    "A/B title choice": "اختيار عنوان A/B",
+    "Adopt A/B title": "اعتمد عنوان A/B",
+    "Refresh choices": "تحديث الخيارات",
+    "Current title": "العنوان الحالي",
+    "Select an A/B title first.": "اختر عنوان A/B أولاً.",
+    "Segment number must be a positive integer.": "رقم المقطع يجب أن يكون عدداً صحيحاً موجباً.",
+    "Fill best publish time": "املأ أفضل وقت نشر",
+    "Fills the schedule field with the next best slot for the platform.": "يملأ حقل الجدولة بأقرب موعد مناسب للمنصة.",
+    "Apply best title to publish field": "ضع أفضل عنوان في حقل النشر",
+    "My channel lessons (analytics)": "دروس قناتي (من التحليلات)",
+    "Segment not found.": "المقطع غير موجود.",
+    "Title is empty.": "العنوان فارغ.",
+    "That title is not among the A/B alternatives of this segment.": "هذا العنوان ليس من بدائل A/B لهذا المقطع.",
+    "Title unchanged: {}": "العنوان لم يتغير: {}",
+    "No viral segments file for this project.": "لا يوجد ملف مقاطع فيروسية لهذا المشروع.",
+    "Title saved: {}": "تم حفظ العنوان: {}"
 }

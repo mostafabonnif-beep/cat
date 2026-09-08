@@ -2751,6 +2751,11 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     seo_gen_btn = gr.Button(i18n("✨ Generate SEO Titles"), size="sm")
                     seo_suggest_btn = gr.Button(i18n("🔍 YouTube Suggestions"), size="sm")
                     seo_slots_btn = gr.Button(i18n("🕐 Best Publish Times"), size="sm")
+                with gr.Row():
+                    seo_apply_btn = gr.Button("✅ " + i18n("Apply best title to publish field"),
+                                              size="sm", variant="primary")
+                    seo_lessons_btn = gr.Button("📊 " + i18n("My channel lessons (analytics)"),
+                                                size="sm", variant="secondary")
                 seo_out = gr.Textbox(label=i18n("Result"), lines=10, interactive=False)
 
                 def run_seo_titles(topic, keywords, platform):
@@ -2806,6 +2811,34 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 seo_slots_btn.click(run_seo_slots,
                                     inputs=[seo_topic_input, seo_keywords_input, seo_platform_input],
                                     outputs=seo_out)
+
+                def run_seo_apply(topic, keywords):
+                    """Generate SEO titles and write the best one to the title field."""
+                    try:
+                        from scripts import seo_titles
+                        kws = [k.strip() for k in (keywords or "").split(",") if k.strip()]
+                        titles = seo_titles.generate_titles(topic or "مقاطع قصيرة", kws, count=6)
+                    except Exception as exc:
+                        return gr.update(), "❌ " + str(exc)
+                    if not titles:
+                        return gr.update(), "❌ لم يتم توليد أي عنوان."
+                    best = max(titles, key=lambda item: float(item.get("score") or 0))
+                    title = str(best.get("title") or "").strip()
+                    return (gr.update(value=title),
+                            "✅ وُضع العنوان في حقل النشر: **{}**\n(درجة SEO: {})".format(
+                                title, best.get("score")))
+
+                def run_seo_lessons(project_name):
+                    if not project_name:
+                        return "❌ اختر مشروعاً أولاً."
+                    project_path = _project_path_for_name(project_name)
+                    return publish_panel.format_channel_lessons(project_path)
+
+                seo_apply_btn.click(run_seo_apply,
+                                    inputs=[seo_topic_input, seo_keywords_input],
+                                    outputs=[pub_title, seo_out])
+                seo_lessons_btn.click(run_seo_lessons, inputs=pub_project,
+                                      outputs=seo_out)
 
 
         with gr.Tab("🗂️ " + i18n("Library")):
