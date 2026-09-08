@@ -24,7 +24,7 @@ from PyInstaller.utils.hooks import (collect_data_files, collect_dynamic_libs,
 
 ROOT = Path(SPECPATH).parent  # packaging/ → repo root
 
-datas = [
+_datas = [
     (str(ROOT / "i18n"), "i18n"),
     (str(ROOT / "models"), "models"),
     (str(ROOT / "fonts"), "fonts"),
@@ -36,6 +36,10 @@ datas = [
     # (webui/subtitle_handler.py) → must sit at the bundle root.
     (str(ROOT / "webui" / "preview.json"), "."),
 ]
+# models/ and api_config.json are gitignored (created at runtime / on first
+# run by preflight) — a fresh CI checkout doesn't have them, and PyInstaller
+# aborts on missing paths. Ship what exists; the app self-heals the rest.
+datas = [(src, dst) for src, dst in _datas if Path(src).exists()]
 # Native libraries collected below are appended to this list. It must be
 # declared BEFORE the first `binaries +=` — a NameError here (line 73
 # referenced it before it existed) was the exact cause of the failing
