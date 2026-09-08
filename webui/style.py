@@ -297,4 +297,43 @@ body, .gradio-container {
 /* --- Subtle scrollbar for the log --- */
 #logs_output textarea::-webkit-scrollbar { width: 8px; }
 #logs_output textarea::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+/* --- v7.34 UI polish: pill-shaped tabs with an accent on hover/active --- */
+.gradio-container .tab-nav button {
+    border-radius: 999px !important;
+    margin: 2px 3px !important;
+    transition: background 0.15s ease, color 0.15s ease !important;
+    font-weight: 600 !important;
+}
+.gradio-container .tab-nav button:hover {
+    background: rgba(249,115,22,0.16) !important;
+}
+.gradio-container .tab-nav button.selected {
+    background: linear-gradient(90deg, #f97316, #ea580c) !important;
+    color: #ffffff !important;
+}
+
+/* --- Secondary buttons: warm outline instead of flat dark --- */
+.gradio-container button.secondary {
+    border: 1px solid rgba(249,115,22,0.45) !important;
+    transition: all 0.15s ease !important;
+}
+.gradio-container button.secondary:hover {
+    background: rgba(249,115,22,0.12) !important;
+    border-color: #f97316 !important;
+}
+
+/* --- vc-updates card (Home): content chips --- */
+.vc-updates li {
+    border-bottom: 1px dashed rgba(255,255,255,0.07);
+}
+.vc-updates li:last-child {
+    border-bottom: none;
+}
+
+/* --- Nicer scrollbars across the app --- */
+.gradio-container ::-webkit-scrollbar { width: 9px; height: 9px; }
+.gradio-container ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
+.gradio-container ::-webkit-scrollbar-thumb { background: #475569; border-radius: 6px; }
+.gradio-container ::-webkit-scrollbar-thumb:hover { background: #f97316; }
 """

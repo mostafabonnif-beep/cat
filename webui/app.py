@@ -1360,6 +1360,11 @@ with gr.Blocks(**_blocks_kwargs) as demo:
         with gr.Tab("🏠 " + i18n("Home")):
             gr.Markdown(f"### {i18n('Home')}")
             gr.HTML(header.home_quickstart())
+            try:
+                from app_version import VERSION
+            except Exception:
+                VERSION = "?"
+            gr.HTML(header.recent_updates_html(version=VERSION))
             gr.Markdown("### 🔧 " + i18n("System status"))
             with gr.Row():
                 home_status_html = gr.HTML(value=header.env_status_html(), scale=6)
@@ -2365,6 +2370,17 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     with gr.Row():
                         pub_dry = gr.Checkbox(label=i18n("Dry run (no real upload)"), value=True)
                         pub_upload_btn = gr.Button(i18n("Upload / Schedule"), variant="primary")
+                    with gr.Row():
+                        pub_batch_gap = gr.Number(
+                            value=0, precision=0, minimum=0, maximum=10080,
+                            label="الفاصل بين مقاطع الدفعة (بالدقائق — 0 = فوراً)")
+                        pub_batch_btn = gr.Button("🚀 رفع كل المقاطع (دفعة كاملة)", variant="secondary")
+                    pub_batch_hint = gr.Markdown(
+                        "**الدفعة:** ترفع كل مقاطع المشروع الجاهزة عبر نفس بوابة الأمان (Dry Run افتراضياً — فعّله "
+                        "للرفع الحقيقي). عند فاصل > 0 تُجدول تلقائياً وتتطلب YouTube Private. منصات أخرى تلقائياً "
+                        "تحصل على نسخة مختلفة لكل مقطع سبق نشره على يوتيوب (تفادي المحتوى المكرر).",
+                        elem_classes=["vc-help-card"],
+                    )
                     pub_audit_btn = gr.Button("🔎 تدقيق جاهزية الرفع قبل البدء", variant="secondary")
                     pub_readiness_out = gr.Textbox(
                         label="تقرير الجاهزية قبل الرفع",
@@ -2740,6 +2756,52 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                                          pub_publish_at, pub_dry, pub_music_gate,
                                          pub_full_oauth, pub_public_confirm],
                                  outputs=pub_log)
+
+            def upload_batch_publish(project_name, platform, privacy_status, dry,
+                                     music_gate, oauth_file, full_access,
+                                     public_confirm, gap):
+                """Batch-publish every rendered clip of the project."""
+                if not project_name:
+                    yield "❌ لم يتم اختيار مشروع."
+                    return
+                project_path = _project_path_for_name(project_name)
+                try:
+                    gap_minutes = max(0, int(gap or 0))
+                except (TypeError, ValueError):
+                    gap_minutes = 0
+                publish_at = None
+                interval = 60
+                if gap_minutes > 0:
+                    if (str(platform or "") == "youtube"
+                            and str(privacy_status or "private").lower() != "private"):
+                        yield "❌ الجدولة على YouTube تتطلب Private — غيّر الخصوصية أو اجعل الفاصل 0."
+                        return
+                    start = (datetime.datetime.now(datetime.timezone.utc)
+                             + datetime.timedelta(minutes=5))
+                    publish_at = start.isoformat()
+                    interval = gap_minutes
+                clips = publish_panel.list_clips(project_path, "auto")
+                if not clips:
+                    yield "❌ لا توجد مقاطع MP4 جاهزة في هذا المشروع (افحص المصدر أو أنتج مقاطع أولاً)."
+                    return
+                yield "🚀 بدء الدفعة: {} مقطع ← {}".format(len(clips), platform)
+                for line in publish_panel.stream_upload_batch(
+                        project_path, platform, clips, bool(dry), music_gate,
+                        client_secrets_path=oauth_file,
+                        privacy_status=privacy_status,
+                        publish_at=publish_at,
+                        oauth_full_access=bool(full_access),
+                        public_confirm=bool(public_confirm),
+                        schedule_interval_minutes=interval,
+                        variant_policy="auto"):
+                    yield line
+
+            pub_batch_btn.click(upload_batch_publish,
+                                inputs=[pub_project, pub_platform, pub_privacy,
+                                        pub_dry, pub_music_gate, pub_youtube_oauth,
+                                        pub_full_oauth, pub_public_confirm,
+                                        pub_batch_gap],
+                                outputs=pub_log)
 
             with gr.Accordion(i18n("🧠 SEO Tools (v7.22): اقتراح عناوين وأوقات النشر"), open=False):
                 gr.Markdown("**عناوين SEO ذكية:** أدخل موضوع المقطع — تحصل على عناوين مقترحة مرتبة بدرجات، مع جلب اقتراحات البحث من يوتيوب (بدون مفتاح API). **أوقات النشر:** احسب أفضل الأوقات تلقائياً أو حدد ساعاتك المفضلة.", elem_classes=["vc-help-card"])

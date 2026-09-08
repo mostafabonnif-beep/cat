@@ -94,6 +94,27 @@ def home_quickstart():
 """.format(steps=steps_html, title=i18n("Start in One Minute"))
 
 
+def recent_updates_html(version="?"):
+    """آخر التحديثات: بطاقة قصيرة تعرض أبرز ما وصل في الإصدارات الأخيرة."""
+    items = [
+        "🎯 اختيار احترافي: تثبيت القصّات على حدود الجمل بعد ضبط المدة، بوابة جودة تُسقط المقاطع الضعيفة حقاً، والاختيار يتعلّم من نتائج قناتك (الصيغ الرابحة تُفضَّل تلقائياً).",
+        "📈 أدوات تعرّف «ليه الفيديو نجح»: تحليلات المحتوى + زر «دروس قناتي» يعرضها بالعربية، وزر «ضع أفضل عنوان» يطبّق عنوان SEO على النشر مباشرة.",
+        "🛡️ حماية أوسع: بوابة أمان قبل أي رفع، قاعدة معجم سياسات بمزامنة ذكية وفاحص صحة، ونسخ مختلفة لمنصة ثانية تُفحص بصرياً إنها مختلفة فعلاً (تيك توك/ريلز بلا محتوى مكرر).",
+        "🖼️ نشر مكتمل: هاشتاغات المقاطع تصل للرفع، صورة مصغرة تُرفع تلقائياً مع الفيديو، واختيار عنوان A/B يُحفظ.",
+        "🗣️ تتبع المتحدث النشط أصبح أوضح وأهدأ في السجلات — مع خيارات Advanced للموجّه/الحساسية.",
+    ]
+    list_html = "".join(
+        '<li style="display:flex; gap:10px; align-items:flex-start; padding:6px 0; color:#cbd5e1; line-height:1.8;">{}</li>'.format(item)
+        for item in items
+    )
+    return """
+<div class="vc-updates" style="direction:rtl; text-align:right; background:linear-gradient(135deg, rgba(249,115,22,0.10), rgba(217,70,239,0.06)); border:1px solid rgba(249,115,22,0.25); border-radius:16px; padding:14px 20px; margin:14px 0;">
+  <h3 style="margin:0 0 4px; color:#fbbf24; font-size:1.05em;">✨ ما الجديد في v{version} (آخر 5 إصدارات)</h3>
+  <ul style="margin:6px 0 0; padding-right:18px;">{items}</ul>
+</div>
+""".format(items=list_html, version=version)
+
+
 def home_panel():
     """Full home content: quick-start + live system status (boot-time)."""
     return home_quickstart() + env_status_html()
