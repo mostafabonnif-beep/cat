@@ -97,57 +97,69 @@ if _tp.is_dir():
         if p.is_file():
             binaries.append((str(p), "."))
 
+# Third-party hidden imports are included only when actually installed in
+# the build environment. The heavy AI stacks (whisperx/pyannote/torch/
+# faster_whisper — several GB) are intentionally NOT installed on the CI
+# runner, and PyInstaller aborts on hidden imports it cannot find. The exe
+# ships the core; scripts/preflight.py self-heals optional stacks at
+# runtime on the user's machine (the project's documented design).
+_THIRD_PARTY_HIDDEN = [
+    "whisperx", "whisperx.transcribe", "whisperx.alignment", "whisperx.diarize",
+    "pyannote.audio", "omegaconf", "torchaudio", "onnxruntime",
+    "google.generativeai", "g4f", "llama_cpp", "mediapipe", "insightface",
+    "acoustid", "gradio", "torch", "faster_whisper", "ctranslate2",
+    "transformers", "tokenizers", "av",
+]
+_HEAVY_SUBMODULE_PACKAGES = ("whisperx", "faster_whisper", "pyannote.audio")
+
+# Local project modules must always be bundled regardless of sys.path.
+_LOCAL_HIDDEN = [
+    # Pre-flight check + auto-repair (runs before the WebUI/CLI boot)
+    "scripts.preflight",
+    # WebUI (launched by default when the exe is double-clicked)
+    "app", "style", "library", "subtitle_handler", "subtitle_editor",
+    "segments_review", "publish_panel", "batch_queue",
+    "settings_store", "header", "utils", "pipeline", "runtime",
+    "learn_panel",
+    # v6.13/v6.14 CLI tools used by the WebUI panels
+    "scripts.strike_feedback",
+    "scripts.reframe",
+    "scripts.analytics",
+    # Premiere XML export (called in-process by the WebUI)
+    "scripts.export_xml_lib",
+    "scripts.export_xml_lib.exporter",
+    "scripts.export_xml_lib.face_detection",
+    "scripts.export_xml_lib.rendering",
+    "scripts.export_xml_lib.xml_generator",
+    "scripts.export_xml_lib.utils",
+]
+
+
+def _module_available(name):
+    import importlib.util
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+def _hidden_imports():
+    hidden = list(_LOCAL_HIDDEN)
+    hidden += [m for m in _THIRD_PARTY_HIDDEN if _module_available(m)]
+    for package in _HEAVY_SUBMODULE_PACKAGES:
+        if _module_available(package):
+            hidden += collect_submodules(package)
+    if _module_available("torchvision"):
+        hidden.append("torchvision")
+    return hidden
+
+
 a = Analysis(
     [str(ROOT / "main_improved.py")],
     pathex=[str(ROOT), str(ROOT / "webui")],
     binaries=binaries,
     datas=datas,
-    hiddenimports=[
-        # whisperx + deps that PyInstaller's static analysis misses
-        "whisperx",
-        "whisperx.transcribe",
-        "whisperx.alignment",
-        "whisperx.diarize",
-        "pyannote.audio",
-        "omegaconf",
-        "torchaudio",
-        "onnxruntime",
-        "google.generativeai",
-        "g4f",
-        "llama_cpp",
-        "mediapipe",
-        "insightface",
-        "acoustid",  # optional music fingerprint check (2.3)
-        "gradio",
-        # Pre-flight check + auto-repair (runs before the WebUI/CLI boot)
-        "scripts.preflight",
-        # Transcription stack (bundled in the full build — CPU torch):
-        "torch",
-        "whisperx",
-        "faster_whisper",
-        "ctranslate2",
-        "transformers",
-        "tokenizers",
-        "av",
-        # WebUI (launched by default when the exe is double-clicked)
-        "app", "style", "library", "subtitle_handler", "subtitle_editor",
-        "segments_review", "publish_panel", "batch_queue",
-        "settings_store", "header", "utils", "pipeline", "runtime",
-        "learn_panel",
-        # v6.13/v6.14 CLI tools used by the WebUI panels
-        "scripts.strike_feedback",
-        "scripts.reframe",
-        "scripts.analytics",
-        # Premiere XML export (called in-process by the WebUI)
-        "scripts.export_xml_lib",
-        "scripts.export_xml_lib.exporter",
-        "scripts.export_xml_lib.face_detection",
-        "scripts.export_xml_lib.rendering",
-        "scripts.export_xml_lib.xml_generator",
-        "scripts.export_xml_lib.utils",
-    ] + collect_submodules("whisperx")
-      + collect_submodules("faster_whisper")
-      + collect_submodules("pyannote.audio") + ["torchvision"],
+    hiddenimports=_hidden_imports(),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
