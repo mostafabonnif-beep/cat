@@ -4456,7 +4456,7 @@ wheels = [
 
 [[package]]
 name = "oussama-cutter"
-version = "7.26.0+pro"
+version = "7.32.3+pro"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography", version = "47.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version <= '3.9'" },
