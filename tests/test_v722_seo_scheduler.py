@@ -4,7 +4,7 @@
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -140,9 +140,13 @@ class TestBuildPlan:
         return paths
 
     def test_plan_spreads_clips(self, tmp_path):
+        now = datetime.now(timezone.utc)
+        days_until_monday = (7 - now.weekday()) % 7 or 7
+        next_monday = (now + timedelta(days=days_until_monday)).replace(
+            hour=8, minute=0, second=0, microsecond=0)
         plan = publish_scheduler.build_plan(
             self._clips(tmp_path), platform="youtube", days=7,
-            start_at="2026-09-07T08:00:00+00:00")
+            start_at=next_monday.isoformat())
         assert plan["ok"] is True
         assert plan["count"] == 3
         times = [datetime.fromisoformat(x["publish_at"]) for x in plan["plan"]]
