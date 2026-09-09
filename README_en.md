@@ -162,5 +162,5 @@ ViralCutter is community-maintained. Join us to democratize AI content creation!
 - ✅ **Reproducible installs**: `uv sync` (uses `uv.lock`); the classic `install_dependencies.bat` flow still works.
 
 
-**Current Version**: 7.35.0-pro — speaker intelligence: the tool learns online which face owns the active speaker (voice-face linking, opt-in), plus batch-upload UI and a what's-new card
+**Current Version**: 7.36.0-pro — speaker intelligence: voice-face linking (which face owns the active speaker) is now switchable right from the WebUI, plus batch-upload UI and a what's-new card
 *ViralCutter: Because viral clips shouldn't cost a fortune.* 🚀

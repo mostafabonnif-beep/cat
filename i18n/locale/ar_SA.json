@@ -668,5 +668,7 @@
     "That title is not among the A/B alternatives of this segment.": "هذا العنوان ليس من بدائل A/B لهذا المقطع.",
     "Title unchanged: {}": "العنوان لم يتغير: {}",
     "No viral segments file for this project.": "لا يوجد ملف مقاطع فيروسية لهذا المشروع.",
-    "Title saved: {}": "تم حفظ العنوان: {}"
+    "Title saved: {}": "تم حفظ العنوان: {}",
+    "Learn Which Face Speaks (Voice Link)": "تعلّم أيّ وجه يتكلّم (ربط الصوت بالوجه)",
+    "v7.36: learns which face owns the active speaker from the clip audio (speech turns + mouth activity, pyannote optional) and biases the camera toward it. Requires Focus on Active Speaker.": "يتعلّم من صوت المقطع أيّ وجه يملك المتحدث النشط (فترات الكلام وحركة الفم؛ pyannote اختياري) ويرجّح الكاميرا نحوه. يتطلب تفعيل «التركيز على المتحدث النشط»."
 }

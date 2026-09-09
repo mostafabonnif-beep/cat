@@ -163,5 +163,5 @@ O ViralCutter é mantido pela comunidade. Junte-se a nós para democratizar a cr
 - ✅ **Instalação reproduzível**: `uv sync` (usa `uv.lock`); o fluxo clássico `install_dependencies.bat` continua igual.
 
 
-**Versão Atual**: 7.35.0-pro — inteligência de locutor: a ferramenta aprende online qual rosto é do locutor ativo (voz-face, opt-in), além do upload em lote e do cartão de novidades
+**Versão Atual**: 7.36.0-pro — inteligência de locutor (voz-face) agora disponível na interface, além do upload em lote e do cartão de novidades
 *ViralCutter: Porque clips virais não precisam custar uma fortuna.* 🚀

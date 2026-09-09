@@ -631,7 +631,8 @@ def run_viral_cutter(input_source, project_name, url, video_file, segments, vira
                      auto_upload_dry_run=True, auto_upload_source="auto",
                      auto_upload_specific_file=None, auto_upload_privacy="private",
                      auto_upload_publish_at="", auto_upload_public_confirm=False,
-                     auto_upload_interval_minutes=60, auto_upload_oauth_file=None):
+                     auto_upload_interval_minutes=60, auto_upload_oauth_file=None,
+                     voice_face_link=False):
 
     # NOTE: parameter order MUST match the `inputs=[...]` order of every
     # .click() that targets this function (start / review-render / batch).
@@ -887,6 +888,7 @@ def run_viral_cutter(input_source, project_name, url, video_file, segments, vira
             watermark_position=watermark_position,
             watermark_size=watermark_size,
             watermark_opacity=watermark_opacity,
+            voice_face_link=voice_face_link,
         )
 
         env = os.environ.copy()
@@ -1878,6 +1880,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                         active_speaker_score_diff_input = gr.Slider(label=i18n("Score Difference"), minimum=0.5, maximum=10.0, value=1.5, step=0.5, info=i18n("Minimum difference to focus on 1 face."))
                     with gr.Row():
                         include_motion_input = gr.Checkbox(label=i18n("Consider Motion"), value=True, info=i18n("Increases score with motion (gestures)."))
+                    with gr.Row():
+                        voice_face_link_input = gr.Checkbox(label=i18n("Learn Which Face Speaks (Voice Link)"), value=False, info=i18n("v7.36: learns which face owns the active speaker from the clip audio (speech turns + mouth activity, pyannote optional) and biases the camera toward it. Requires Focus on Active Speaker."))
                     with gr.Row():
                         active_speaker_motion_threshold_input = gr.Slider(label=i18n("Motion Dead Zone"), minimum=0.0, maximum=20.0, value=3.0, step=0.5, info=i18n("Pixels ignored."))
                         active_speaker_motion_sensitivity_input = gr.Slider(label=i18n("Motion Sensitivity"), minimum=0.01, maximum=0.5, value=0.05, step=0.01, info=i18n("Points per pixel."))
@@ -3342,7 +3346,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     require_youtube_connection_input, auto_upload_after_processing_input, auto_upload_dry_run_input,
     auto_upload_source_input, auto_upload_specific_file_input, auto_upload_privacy_input, auto_upload_publish_at_input,
     auto_upload_public_confirm_input, auto_upload_interval_minutes_input,
-    auto_upload_oauth_file_input
+    auto_upload_oauth_file_input,
+    voice_face_link_input
     ], outputs=[logs_output, start_btn, stop_btn, results_html, progress_panel, tasks_panel, errors_panel])
 
     review_render_btn.click(run_review_render, inputs=[
@@ -3367,7 +3372,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     require_youtube_connection_input, auto_upload_after_processing_input, auto_upload_dry_run_input,
     auto_upload_source_input, auto_upload_specific_file_input, auto_upload_privacy_input, auto_upload_publish_at_input,
     auto_upload_public_confirm_input, auto_upload_interval_minutes_input,
-    auto_upload_oauth_file_input
+    auto_upload_oauth_file_input,
+    voice_face_link_input
     ], outputs=[logs_output, start_btn, stop_btn, results_html, progress_panel, tasks_panel, errors_panel])
 
     batch_run_btn.click(run_batch, inputs=[
@@ -3392,7 +3398,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
     watermark_position_input, watermark_size_input, watermark_opacity_input,
     require_youtube_connection_input, auto_upload_after_processing_input, auto_upload_dry_run_input,
     auto_upload_source_input, auto_upload_specific_file_input, auto_upload_privacy_input, auto_upload_publish_at_input,
-    auto_upload_public_confirm_input, auto_upload_interval_minutes_input
+    auto_upload_public_confirm_input, auto_upload_interval_minutes_input,
+    voice_face_link_input
     ], outputs=[batch_df, batch_summary, logs_output, start_btn, stop_btn, results_html, progress_panel, tasks_panel, errors_panel])
 
 def _resolve_webui_port(preferred=7860, search_limit=20):

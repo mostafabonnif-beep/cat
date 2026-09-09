@@ -668,5 +668,7 @@
     "That title is not among the A/B alternatives of this segment.": "Bu başlık bölümün A/B alternatifleri arasında değil.",
     "Title unchanged: {}": "Başlık değişmedi: {}",
     "No viral segments file for this project.": "Bu proje için viral bölüm dosyası yok.",
-    "Title saved: {}": "Başlık kaydedildi: {}"
+    "Title saved: {}": "Başlık kaydedildi: {}",
+    "Learn Which Face Speaks (Voice Link)": "Hangi yüzün konuştuğunu öğren (ses-yüz bağlantısı)",
+    "v7.36: learns which face owns the active speaker from the clip audio (speech turns + mouth activity, pyannote optional) and biases the camera toward it. Requires Focus on Active Speaker.": "Klibin sesinden aktif konuşmacının yüzünü öğrenir (konuşma sıraları + ağız hareketi; pyannote isteğe bağlı) ve kamerayı ona yönlendirir. 'Aktif konuşmacıya odaklan' gerektirir."
 }

@@ -668,5 +668,7 @@
     "That title is not among the A/B alternatives of this segment.": "Esse título não está entre as alternativas A/B deste segmento.",
     "Title unchanged: {}": "Título inalterado: {}",
     "No viral segments file for this project.": "Nenhum arquivo de segmentos virais para este projeto.",
-    "Title saved: {}": "Título salvo: {}"
+    "Title saved: {}": "Título salvo: {}",
+    "Learn Which Face Speaks (Voice Link)": "Aprender qual rosto fala (vínculo voz-face)",
+    "v7.36: learns which face owns the active speaker from the clip audio (speech turns + mouth activity, pyannote optional) and biases the camera toward it. Requires Focus on Active Speaker.": "Aprende com o áudio do clipe qual rosto é o do falante ativo (turnos de fala + movimento da boca; pyannote opcional) e inclina a câmera para ele. Requer 'Focar no falante ativo'."
 }

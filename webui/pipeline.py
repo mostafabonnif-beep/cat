@@ -44,7 +44,9 @@ def build_command(main_script_path, source_args, *, segments=None, viral=False,
                   output_aspect=None, reframe_mode=None, force_new_segments=False,
                   visual_check="auto", visual_gate="warn", visual_frames=None,
                   visual_model=None, auto_download_visual=False,
-                  audio_qc="on", audio_qc_gate="warn"):
+                  audio_qc="on", audio_qc_gate="warn",
+                  # --- v7.36 voice-face link (v7.35 core, opt-in; WebUI round) ---
+                  voice_face_link=False):
     """Assemble the full CLI command for main_improved.py.
 
     `source_args` holds the input-source-specific flags already resolved by
@@ -192,6 +194,13 @@ def build_command(main_script_path, source_args, *, segments=None, viral=False,
         cmd.extend(["--audio-qc", str(audio_qc)])
     if audio_qc_gate and audio_qc_gate != "warn":
         cmd.extend(["--audio-qc-gate", str(audio_qc_gate)])
+
+    # v7.35 voice-face link (opt-in): learn which face owns the active
+    # speaker from the clip audio. The CLI default is "off", so the flag is
+    # only emitted when the WebUI toggle is checked (or env-var users set
+    # VIRALCUTTER_VOICE_FACE_LINK=1 themselves).
+    if voice_face_link:
+        cmd.extend(["--voice-face-link", "on"])
 
     # Force fresh viral segments instead of reusing viral_segments.txt (v6.16).
     if force_new_segments:
