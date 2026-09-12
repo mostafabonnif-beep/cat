@@ -83,9 +83,10 @@ python3 -m py_compile scripts/arabic_text.py scripts/clip_scoring.py scripts/tra
 
 ## 7. Test results
 
-- **1203 passed, 14 failed, 29 errors.** Baseline before the change: 1129 passed / 14 failed / 29 errors — identical failure set (all missing optional deps in this sandbox: cv2, requests, PIL, scenedetect). All 74 new tests pass; zero regressions.
-- The 7 ignored modules fail collection for the same pre-existing reason (cv2).
-- FFmpeg e2e produced valid clips within 24 ms of the requested durations, with word-clipped subtitle JSONs and Arabic filenames intact.
+- **CI (GitHub Actions, the authoritative run — Python 3.10 / 3.11 / 3.12): 1317 passed, 0 failed, 0 errors**, `ruff check .` clean, `pip-audit` reports no known vulnerabilities. All 74 new tests pass on every supported interpreter.
+- Local sandbox run (fewer optional deps installed): 1203 passed / 14 failed / 29 errors — the failures are byte-identical to the pre-change baseline in that sandbox (missing cv2, requests, PIL, scenedetect), i.e. no regressions.
+- The 7 heavy modules that cannot be collected locally (cv2) collect and pass in CI.
+- FFmpeg e2e locally produced valid clips within 24 ms of the requested durations, with word-clipped subtitle JSONs and Arabic filenames intact.
 
 ## 8. Remaining limitations
 
