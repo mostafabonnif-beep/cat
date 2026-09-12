@@ -181,7 +181,15 @@ def clip_metadata(project_path, video_path):
     return {"title": title, "caption": caption, "hashtags": normalized[:15],
             "topic": str(seg.get("topic") or ""),
             "angle": str(seg.get("angle") or ""),
-            "hook_type": str(seg.get("hook_type") or "")}
+            "hook_type": str(seg.get("hook_type") or ""),
+            # v7.41 review gating surfaced to the publish UI.
+            "requires_review": bool(seg.get("requires_review")
+                                    or seg.get("title_review_required")),
+            "publish_blocked_reason": str(seg.get("publish_blocked_reason") or ""),
+            "title_validation_status": str(
+                (seg.get("title_validation")
+                 or (seg.get("title_data") or {}).get("title_validation")
+                 or {}).get("status") or "")}
 
 
 def clip_suggestion(project_path, video_path):

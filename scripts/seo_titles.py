@@ -233,8 +233,16 @@ def _topic_token(topic: str) -> str:
 
 
 def generate_titles(topic: str, keywords: list[str] | None = None,
-                    count: int = 6) -> list[dict[str, Any]]:
-    """Generate ranked title candidates from a topic + optional keywords."""
+                    count: int = 6, *, transcript_text: str | None = None,
+                    content_language: str = "auto") -> list[dict[str, Any]]:
+    """Generate ranked title candidates from a topic + optional keywords.
+
+    v7.41 — pass ``transcript_text`` (the EXACT clip-window transcript) to get
+    GROUNDED titles only: every candidate is factually validated and any title
+    that invents a number, name or claim not present in the clip is dropped.
+    Without it the function stays a pure brainstorming template (the caller is
+    then responsible for validating before showing/publishing).
+    """
     topic = _topic_token(topic)
     keywords = [str(k) for k in (keywords or []) if str(k).strip()]
     candidates = []
@@ -264,6 +272,23 @@ def generate_titles(topic: str, keywords: list[str] | None = None,
             continue
         seen.add(key)
         unique.append(item)
+    if transcript_text:
+        # Grounding pass: keep only titles the clip actually supports.
+        grounded = []
+        for item in unique:
+            try:
+                from scripts import title_factual
+                validation = title_factual.validate_title_vs_clip(
+                    item["title"], str(transcript_text), content_language)
+            except Exception:
+                validation = None
+            if validation is not None:
+                item = dict(item, validation=validation,
+                            grounded=validation.get("status") != "rejected")
+                if validation.get("status") == "rejected":
+                    continue
+            grounded.append(item)
+        unique = grounded
     unique.sort(key=lambda item: item["score"], reverse=True)
     return unique[:count]
 

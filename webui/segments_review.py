@@ -353,6 +353,24 @@ def choose_title(project_path, index, title):
     options, current = title_choices_for(project_path, index)
     if title not in options:
         return False, i18n("That title is not among the A/B alternatives of this segment.")
+    # v7.41: the reviewer's pick is factually validated against the EXACT clip
+    # transcript before it can become the shipped title — an A/B option that
+    # the validator rejects (invented number/name/claim) cannot be promoted.
+    validation = None
+    seg = segments[index]
+    window_text = str(seg.get("transcript_text")
+                      or (seg.get("window_analysis") or {}).get("text") or "")
+    if window_text:
+        try:
+            from scripts import title_factual
+            validation = title_factual.validate_title_vs_clip(
+                title, window_text,
+                str((seg.get("title_data") or {}).get("title_language") or "auto"))
+            if validation.get("status") == "rejected":
+                return False, i18n("That title is not supported by this clip: {}").format(
+                    "; ".join(validation.get("reasons") or ["factual validation failed"]))
+        except Exception:
+            validation = None
     if title == current:
         return True, i18n("Title unchanged: {}").format(title)
     payload = _read_payload(project_path)
@@ -361,6 +379,10 @@ def choose_title(project_path, index, title):
     payload["segments"][index]["recommended_title"] = title
     # Keep the *chosen* title visible everywhere the reviewer looks next.
     payload["segments"][index]["title_chosen"] = title
+    if validation is not None:
+        payload["segments"][index]["title_validation"] = validation
+        payload["segments"][index]["title_review_required"] = (
+            validation.get("status") != "verified")
     _write_payload(project_path, payload)
     return True, i18n("Title saved: {}").format(title)
 

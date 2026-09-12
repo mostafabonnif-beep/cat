@@ -23,10 +23,15 @@ except Exception:
     _arabic_text = None
 
 try:
-    from scripts import clip_scoring, title_factual, transcript_window
+    from scripts import (
+        clip_scoring,
+        segment_validator,
+        title_factual,
+        transcript_window,
+    )
     HAS_CLIP_QUALITY = True
 except Exception:
-    clip_scoring = title_factual = transcript_window = None
+    clip_scoring = title_factual = transcript_window = segment_validator = None
     HAS_CLIP_QUALITY = False
 
 # Configura stdout para evitar erros de encoding no Windows (substitui caracteres inválidos por ?)
@@ -1049,8 +1054,44 @@ def prompt_version_fingerprint():
     except Exception:
         template = ""
     scoring_version = getattr(clip_scoring, "SCORING_VERSION", "legacy") if clip_scoring else "legacy"
-    payload = "{}|{}|{}".format(SEGMENTS_SCHEMA_VERSION, scoring_version, template)
+    title_schema = getattr(title_factual, "TITLE_VALIDATION_SCHEMA_VERSION", "legacy") if title_factual else "legacy"
+    payload = "{}|{}|{}|{}".format(
+        SEGMENTS_SCHEMA_VERSION, scoring_version, title_schema, template)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def selection_weights_fingerprint():
+    """Stable fingerprint of the ACTIVE selection weights (env override aware)."""
+    if clip_scoring is None:
+        return "legacy"
+    try:
+        return clip_scoring.weights_fingerprint()
+    except Exception:
+        return "legacy"
+
+
+def transcript_fingerprint(transcript_segments):
+    """Content fingerprint of the transcript used for a segment run.
+
+    sha1 over the ordered (start, end, text) triples. Any re-transcription
+    that changes the words/timings changes this value, so previously saved
+    windows/titles are recognised as stale instead of being silently reused.
+    Returns None for an empty transcript.
+    """
+    payload = []
+    for line in transcript_segments or []:
+        if not isinstance(line, dict):
+            continue
+        payload.append([
+            round(float(line.get("start", 0.0) or 0.0), 3),
+            round(float(line.get("end", 0.0) or 0.0), 3),
+            str(line.get("text") or ""),
+        ])
+    if not payload:
+        return None
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
 
 
 def _load_word_timings(project_folder):
@@ -1215,13 +1256,19 @@ def snap_segment_boundaries(start_time, end_time, transcript_segments):
     snapped_end = end_time
     prev_block_end = None
     for block_start, block_end in blocks:
+        if abs(end_time - block_start) <= 0.05:
+            # The end already sits exactly on a block boundary: it is
+            # word-safe, so keep it byte-exact instead of pulling in the next
+            # block's first word.
+            snapped_end = end_time
+            break
         if end_time < block_start:
             # End lands inside a pause: trim back to the sentence that
             # already finished instead of leaking into the next one.
             if prev_block_end is not None:
                 snapped_end = prev_block_end
             break
-        if block_start <= end_time <= block_end:
+        if block_start < end_time <= block_end:
             # End lands mid-sentence: extend to the sentence end so the
             # punchline is complete (the caller rejects snaps that would
             # violate the max-duration budget).
@@ -1261,6 +1308,218 @@ def _has_any_anchor(segment):
     return False
 
 
+# ---------------------------------------------------------------------------
+# v7.41 — boundary policy helpers: text recovery, media duration, extension
+# ---------------------------------------------------------------------------
+
+def _align_text_time(transcript_segments, target_text, search_start_idx, *,
+                     allow_same=True, min_similarity=0.55):
+    """Fuzzy-align ``target_text`` to a transcript line.
+
+    Mirrors the alignment used for the main start/end matching (the AI often
+    paraphrases the transcript slightly). Returns ``(index, start_time,
+    similarity)`` for the best line at/after ``search_start_idx`` or ``None``
+    when nothing reaches ``min_similarity``. Used to RECOVER a reversed
+    window from its text anchors instead of silently swapping the numbers.
+    """
+    target = _normalized_match_text(target_text)
+    if not target or not transcript_segments:
+        return None
+    limit = min(len(transcript_segments), int(search_start_idx) + 200)
+    best_index, best_similarity = -1, 0.0
+    start_at = int(search_start_idx) + (0 if allow_same else 1)
+    for index in range(max(0, start_at), limit):
+        similarity = _text_similarity(
+            target, _normalized_match_text(transcript_segments[index].get("text")))
+        if similarity > best_similarity:
+            best_similarity, best_index = similarity, index
+        if best_similarity >= 0.999:
+            break
+    if best_index == -1 or best_similarity < min_similarity:
+        return None
+    return best_index, float(transcript_segments[best_index].get("start", 0.0)), best_similarity
+
+
+def _recover_reversed_window(seg, transcript_segments, anchor_idx):
+    """Rebuild a reversed (end < start) window from its start_text/end_text.
+
+    Returns ``(start_time, end_time)`` when BOTH text anchors align to real
+    transcript lines in a valid order, else ``None``. Recovering the model's
+    semantic window from its own text is the only trustworthy repair; the
+    numbers themselves are never silently swapped into a different span.
+    """
+    start_text = seg.get("start_text")
+    end_text = seg.get("end_text")
+    if not start_text or not end_text:
+        return None
+    start_hit = _align_text_time(transcript_segments, start_text, anchor_idx)
+    if start_hit is None:
+        return None
+    start_index, start_time, _ = start_hit
+    end_hit = _align_text_time(transcript_segments, end_text, start_index, allow_same=True)
+    if end_hit is None:
+        return None
+    end_index, _end_start, _ = end_hit
+    end_time = float(transcript_segments[end_index].get("end", _end_start))
+    if end_time <= start_time + 0.1:
+        return None
+    return start_time, end_time
+
+
+def probe_media_duration(path):
+    """Real duration (seconds) of a media file via ffprobe, else ``None``.
+
+    Used to validate that a candidate window lies inside the ACTUAL media,
+    not merely inside the transcript. Never raises: missing file, missing
+    ffprobe or a failed probe all return None so callers fall back to the
+    transcript bounds.
+    """
+    if not path:
+        return None
+    try:
+        if os.path.isdir(str(path)):
+            return None
+        import shutil
+        import subprocess
+        if shutil.which("ffprobe") is None:
+            return None
+        completed = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+            check=False)
+        if completed.returncode != 0:
+            return None
+        value = float(completed.stdout.decode("utf-8", "replace").strip())
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
+def _transcript_text_between(transcript_segments, start_time, end_time):
+    """Raw text of the transcript lines overlapping ``[start_time, end_time]``."""
+    parts = []
+    for line in transcript_segments or []:
+        try:
+            line_start = float(line.get("start", 0.0) or 0.0)
+            line_end = float(line.get("end", line_start) or line_start)
+        except (TypeError, ValueError):
+            continue
+        if line_start < end_time and line_end > start_time:
+            text = str(line.get("text") or "").strip()
+            if text:
+                parts.append(text)
+    return " ".join(parts).strip()
+
+
+def _contextually_connected(base_text, added_text, max_gap=1.5, gap=None):
+    """True when newly added speech continues the same idea.
+
+    Connected when the added words share a content token with the existing
+    window OR the two chunks are contiguous speech (a gap shorter than
+    ``max_gap``) rather than a jump into unrelated material.
+    """
+    if gap is not None:
+        try:
+            if float(gap) <= float(max_gap):
+                return True
+        except (TypeError, ValueError):
+            pass
+    base_tokens = {token for token in _normalized_match_text(base_text).split()
+                   if len(token) >= 3}
+    added_tokens = {token for token in _normalized_match_text(added_text).split()
+                    if len(token) >= 3}
+    return bool(base_tokens & added_tokens)
+
+
+def _extend_to_min_duration(start_time, end_time, min_duration,
+                            transcript_segments, transcript_start,
+                            transcript_end, max_duration):
+    """Sentence-aware recovery for a window shorter than ``min_duration``.
+
+    Searches neighbouring sentence units and accepts the FIRST expansion
+    that (a) reaches the minimum, (b) stays inside the max duration and the
+    transcript, and (c) is contextually connected to the window (shared
+    content word, or contiguous speech). Returns
+    ``(start, end, note)`` or ``None`` when no valid connected expansion
+    exists — the caller then marks the candidate ``transcript_limited``
+    instead of padding it with unrelated speech.
+    """
+    try:
+        start_time = float(start_time)
+        end_time = float(end_time)
+        min_duration = float(min_duration)
+    except (TypeError, ValueError):
+        return None
+    if end_time - start_time >= min_duration:
+        return start_time, end_time, "no_extension_needed"
+    if transcript_window is None or not transcript_segments:
+        return None
+    units = transcript_window.split_sentence_units(transcript_segments)
+    if not units:
+        return None
+    window_text = _transcript_text_between(transcript_segments, start_time, end_time)
+
+    for unit in units:
+        unit_start = float(unit["start"])
+        unit_end = float(unit["end"])
+        if unit_end <= end_time - 0.05:
+            continue
+        new_end = min(max(unit_end, start_time + min_duration), float(transcript_end))
+        if new_end - start_time < min_duration - 0.01:
+            continue
+        if new_end - start_time > float(max_duration) + 0.01:
+            break
+        if new_end <= end_time + 0.01:
+            continue
+        added = _transcript_text_between(transcript_segments, end_time, new_end)
+        # Extending within the CURRENT sentence unit is always connected;
+        # reaching PAST it (into another unit / silence) requires real added
+        # speech that is contextually connected. Otherwise the "extension"
+        # would just append dead air or unrelated material.
+        extends_sentence = (unit_start <= end_time + 0.05
+                            and new_end <= unit_end + 0.01)
+        if not extends_sentence and not added:
+            continue
+        gap = unit_start - end_time
+        if extends_sentence or _contextually_connected(window_text, added, gap=gap):
+            return start_time, new_end, "min_duration_extended_forward"
+
+    for unit in reversed(units):
+        unit_start = float(unit["start"])
+        unit_end = float(unit["end"])
+        if unit_start >= start_time + 0.05:
+            continue
+        new_start = max(min(unit_start, end_time - min_duration), float(transcript_start))
+        if end_time - new_start < min_duration - 0.01:
+            continue
+        if end_time - new_start > float(max_duration) + 0.01:
+            break
+        if new_start >= start_time - 0.01:
+            continue
+        added = _transcript_text_between(transcript_segments, new_start, start_time)
+        extends_sentence = (unit_end >= start_time - 0.05
+                            and new_start >= unit_start - 0.01)
+        if not extends_sentence and not added:
+            continue
+        gap = start_time - unit_end
+        if extends_sentence or _contextually_connected(window_text, added, gap=gap):
+            return new_start, end_time, "min_duration_extended_backward"
+
+    # Last resort: the whole transcript is shorter than the requested minimum,
+    # so "the complete idea" IS the full transcript. Use it (still marked
+    # transcript_limited by the caller) instead of emitting an arbitrarily
+    # short slice of a source that simply has less material than min_duration.
+    try:
+        full_span = float(transcript_end) - float(transcript_start)
+    except (TypeError, ValueError):
+        full_span = 0.0
+    if 0.0 < full_span <= min_duration + 0.05:
+        return (float(transcript_start), float(transcript_end),
+                "min_duration_full_transcript")
+    return None
+
+
 # Minimum speech content for a viable clip (v7.40 validation): at least one
 # spoken word, and speech must cover more than a dead-air sliver of the
 # window. Windows between REJECT and LOW thresholds stay but are flagged and
@@ -1269,6 +1528,16 @@ def _has_any_anchor(segment):
 MIN_WINDOW_WORDS = 1
 REJECT_SPEECH_COVERAGE = 0.05
 LOW_SPEECH_COVERAGE = 0.35
+
+# Final-validator error codes that make a window unexportable. Everything
+# else (mid-sentence truncation forced by max_duration, edge silence, a title
+# needing review, safety/duplicate flags) is surfaced as a review flag.
+FATAL_VALIDATION_CODES = frozenset({
+    "missing_start_time", "missing_end_time", "invalid_start_time",
+    "invalid_end_time", "end_not_after_start", "non_positive_duration",
+    "duration_below_min", "duration_above_max", "out_of_media_bounds",
+    "empty_transcript",
+})
 
 
 def _validate_segment_window(start_time, end_time, min_duration, analysis):
@@ -1348,7 +1617,7 @@ def _completion_status(analysis):
 
 def _compute_factor_scores(segment_entry, analysis, *, edge_match=1.0, title_relevance_ratio=0.0,
                            repetition_penalty=0.0, safety_penalty=0.0):
-    """The 11-factor 0-100 score set for one candidate (v7.40).
+    """The 12-factor 0-100 score set for one candidate (v7.41).
 
     Genuine AI self-evaluations are preferred for the editorial factors;
     deterministic transcript-window heuristics fill every gap, so a candidate
@@ -1382,7 +1651,8 @@ def _compute_factor_scores(segment_entry, analysis, *, edge_match=1.0, title_rel
         "information_density": clip_scoring.information_density_score(
             (analysis or {}).get("word_count") or 0, duration,
             (analysis or {}).get("unique_ratio")),
-        "completion_score": clip_scoring.completion_score(analysis),
+        "narrative_completeness": clip_scoring.narrative_completeness_score(analysis),
+        "boundary_quality": clip_scoring.boundary_quality_score(analysis),
         "transcript_alignment": clip_scoring.transcript_alignment_score(analysis, edge_match),
         "audio_quality": clip_scoring.audio_quality_proxy(analysis),
         "visual_quality": clip_scoring.visual_quality_score(segment_entry),
@@ -1390,11 +1660,11 @@ def _compute_factor_scores(segment_entry, analysis, *, edge_match=1.0, title_rel
         "repetition_penalty": round(max(0.0, min(100.0, float(repetition_penalty or 0.0))), 1),
         "safety_penalty": round(max(0.0, min(100.0, float(safety_penalty or 0.0))), 1),
     }
-    # narrative_completeness (genuine AI eval) strengthens the completion
+    # narrative_completeness (genuine AI eval) strengthens the narrative
     # factor when it shipped; clarity strengthens standalone context.
     if segment_entry.get("narrative_completeness") is not None:
-        factors["completion_score"] = round(
-            0.6 * factors["completion_score"]
+        factors["narrative_completeness"] = round(
+            0.6 * factors["narrative_completeness"]
             + 0.4 * _bounded_score(segment_entry.get("narrative_completeness"), virality), 1)
     if segment_entry.get("clarity_score") is not None:
         factors["standalone_context"] = round(
@@ -1447,7 +1717,7 @@ def _apply_semantic_repetition_penalties(segments):
                 candidate["selection_score"] = clip_scoring.compute_final_score(factors)
 
 
-def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True, project_folder=None):
+def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True, project_folder=None, media_duration=None):
     """
     Aligns raw AI segments (with reference tags) to actual transcript timestamps.
     Applies constraints, validation, and deduplication.
@@ -1461,9 +1731,23 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     ``None`` keeps the legacy behaviour (current working directory).
     """
     
-    all_segments = raw_segments
+    all_segments = list(raw_segments)
     tempo_minimo = min_duration
     tempo_maximo = max_duration
+
+    # v7.41: real media duration (when known) is the last word on whether a
+    # window is valid — transcript bounds alone cannot catch an out-of-range
+    # model timestamp on a shorter source file.
+    if media_duration is None and project_folder:
+        candidate_media = os.path.join(str(project_folder), "input.mp4")
+        if os.path.isfile(candidate_media):
+            media_duration = probe_media_duration(candidate_media)
+    try:
+        media_duration = float(media_duration) if media_duration is not None else None
+    except (TypeError, ValueError):
+        media_duration = None
+    if media_duration is not None and media_duration <= 0:
+        media_duration = None
 
     # v7.40: word-level timings (WhisperX input.json) let the boundary
     # refinement snap cut points to exact word edges; empty list → the
@@ -1591,84 +1875,96 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 if final_end_time == -1:
                     final_end_time = final_start_time + tempo_minimo
 
-            # Reversed explicit window (end before start). The model's real
-            # intent is the span *between* the two anchors, so swap them into
-            # order instead of silently relocating the cut (the old behaviour
-            # produced a meaningless clip that started at the "end" anchor).
+            # v7.41: a reversed window (end < start) is NOT silently swapped —
+            # swapping can point at a completely different semantic span. First
+            # try to recover the intended window from start_text/end_text; if
+            # that is not reliable, reject the candidate with reason
+            # "reversed_window" instead of guessing.
             if final_end_time < final_start_time:
-                _swapped_start = float(final_start_time)
-                final_start_time = float(final_end_time)
-                final_end_time = _swapped_start
-                print(f"[WARN] Reversed window for '{seg.get('title', 'Untitled')}': "
-                      f"start > end. Swapped to [{final_start_time:.2f}, {final_end_time:.2f}].")
+                recovered = _recover_reversed_window(seg, transcript_segments, start_idx)
+                if recovered is not None:
+                    final_start_time, final_end_time = recovered
+                    print("[WARN] Reversed window for '{}': recovered from text anchors "
+                          "to [{:.2f}, {:.2f}].".format(
+                              seg.get('title', 'Untitled'), final_start_time, final_end_time))
+                else:
+                    print("[WARN] Rejecting candidate '{}': reversed_window "
+                          "(end < start and no reliable text recovery).".format(
+                              seg.get('title', 'Untitled')))
+                    continue
 
             # Keep explicit or text-matched windows inside the actual transcript.
             # This prevents malformed AI timestamps from producing empty or out-of-range clips.
             # Snapshot the aligned model edges: the min/max clamp below may move
             # them, and any moved edge must be snapped to a speech boundary too.
-            model_start_time = float(final_start_time)
-            model_end_time = float(final_end_time)
+            # Effective upper bound: the real media duration (when known) is
+            # authoritative — a model timestamp past the end of the actual
+            # file must never survive into an ffmpeg cut.
+            media_end = transcript_end_time
+            if media_duration is not None:
+                media_end = min(media_end, media_duration)
             raw_start_time = float(final_start_time)
-            if raw_start_time > transcript_end_time:
-                final_start_time = max(transcript_start_time, transcript_end_time - tempo_minimo)
+            if raw_start_time > media_end:
+                final_start_time = max(transcript_start_time, media_end - tempo_minimo)
             else:
-                final_start_time = min(max(raw_start_time, transcript_start_time), transcript_end_time)
-            final_end_time = min(max(float(final_end_time), final_start_time + 0.1), transcript_end_time)
+                final_start_time = min(max(raw_start_time, transcript_start_time), media_end)
+            final_end_time = min(max(float(final_end_time), final_start_time + 0.1), media_end)
 
             # Calculate Duration
             duration = final_end_time - final_start_time
-            
-            # Validate Duration (Min)
-            if duration < tempo_minimo: 
-                print(f"[WARN] Segmento menor que duration min ({duration:.2f}s < {tempo_minimo}s). Estendendo para {tempo_minimo}s.")
-                final_end_time = final_start_time + tempo_minimo
-                if final_end_time > transcript_end_time:
-                    # Never extend past the media: shift the window back so
-                    # the clip still reaches the minimum without ffmpeg
-                    # cutting silence beyond the last spoken word.
-                    final_end_time = transcript_end_time
-                    final_start_time = max(transcript_start_time,
-                                           final_end_time - tempo_minimo)
-                duration = final_end_time - final_start_time
-            
+            extension_note = None
+
+            # Validate Duration (Min): sentence-aware, connectivity-checked
+            # expansion. Never blindly drags in unrelated speech just to hit
+            # the number — if no connected sentence reaches the minimum, the
+            # window stays short and is marked transcript_limited below.
+            if duration < tempo_minimo:
+                expanded = _extend_to_min_duration(
+                    final_start_time, final_end_time, tempo_minimo,
+                    transcript_segments, transcript_start_time, media_end, tempo_maximo)
+                if expanded is not None:
+                    final_start_time, final_end_time, extension_note = expanded
+                    duration = final_end_time - final_start_time
+                    print(f"[DEBUG] Segment extended to satisfy min duration via "
+                          f"sentence boundary ({extension_note}): {duration:.2f}s.")
+
             # Validate Duration (Max)
             if duration > tempo_maximo:
                 print(f"[WARN] Segmento excede max duration ({duration:.2f}s > {tempo_maximo}s). Cortando para {tempo_maximo}s.")
-                final_end_time = min(final_start_time + tempo_maximo,
-                                     transcript_end_time)
+                final_end_time = min(final_start_time + tempo_maximo, media_end)
                 duration = final_end_time - final_start_time
 
-            # Professional cut refinement: snap both edges to sentence
-            # boundaries (transcript pauses) so the clip never starts or
-            # ends mid-word. Applied after duration clamping so the
-            # min/max guarantees above are never violated. Fully explicit
-            # numeric windows from the AI are trusted as-is (the documented
-            # contract): snapping is for text-matched windows and for
-            # explicit windows whose edges the clamp moved (min extension,
-            # max truncation or transcript pinning) — those adjusted edges
-            # can land mid-word and must be re-snapped.
-            clamp_adjusted = (abs(float(final_start_time) - model_start_time) > 1e-6
-                              or abs(float(final_end_time) - model_end_time) > 1e-6)
-            if snap_to_boundaries and (not (explicit_start and explicit_end) or clamp_adjusted):
+            # Professional cut refinement (v7.41): snap BOTH edges to real
+            # speech boundaries for EVERY window. Explicit numeric AI
+            # timestamps are no longer trusted just because they are numeric;
+            # a boundary that lands inside a word is always repaired, while an
+            # already word-aligned edge in silence stays byte-exact.
+            refinement_notes = []
+            if extension_note:
+                refinement_notes.append(extension_note)
+            if snap_to_boundaries:
                 snapped_start, snapped_end = snap_segment_boundaries(
                     final_start_time, final_end_time, transcript_segments)
-                # Keep the snap only when it stays inside the allowed window.
                 if snapped_start >= 0 and (snapped_end - snapped_start) >= tempo_minimo:
                     if (snapped_end - snapped_start) <= tempo_maximo:
+                        if (snapped_start, snapped_end) != (final_start_time, final_end_time):
+                            refinement_notes.append("sentence_boundary_snap")
                         final_start_time = snapped_start
                         final_end_time = snapped_end
                         duration = final_end_time - final_start_time
-                # A snap that overshoots min duration is still better than a
-                # mid-word cut: fall back to the raw (clamped) window.
+                    else:
+                        # Snapping would break max_duration: record the
+                        # conflict and keep the validated clamped window.
+                        refinement_notes.append("snap_reverted_max_duration")
+                elif (snapped_start, snapped_end) != (final_start_time, final_end_time):
+                    refinement_notes.append("snap_reverted_min_duration")
 
-                # v7.40: boundary refinement on the same eligibility contract
-                # as snapping (text-matched or clamp-adjusted windows; clean
-                # explicit AI windows stay byte-exact). Repairs, in order:
-                # word-edge snapping (when word timings exist), Arabic
-                # connector openers (include the antecedent sentence),
-                # dangling preposition/conjunction endings (finish the
-                # sentence), then the configurable pre/post-roll. Duration
-                # limits and transcript bounds are re-enforced inside.
+                # v7.41: boundary refinement — word-edge snapping (when word
+                # timings exist), Arabic connector openers (include the
+                # antecedent sentence), dangling preposition/conjunction
+                # endings (finish the sentence), then the configurable
+                # pre/post-roll. Duration limits and media bounds are
+                # re-enforced inside.
                 if transcript_window is not None:
                     refined_start, refined_end, refine_notes = transcript_window.refine_boundaries(
                         final_start_time, final_end_time, transcript_segments,
@@ -1676,11 +1972,26 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                         min_duration=tempo_minimo,
                         max_duration=tempo_maximo,
                         transcript_start=transcript_start_time,
-                        transcript_end=transcript_end_time)
+                        transcript_end=media_end)
+                    refinement_notes.extend(refine_notes)
                     if (refined_end - refined_start) >= tempo_minimo or duration < tempo_minimo:
                         if (refined_start, refined_end) != (final_start_time, final_end_time):
                             final_start_time, final_end_time = refined_start, refined_end
                             duration = final_end_time - final_start_time
+                    if "refinement_reverted_max_duration" in refine_notes:
+                        refinement_notes.append("boundary_conflict_max_duration")
+
+            # Word-edge safety net: even when snapping is disabled or an edge
+            # was left untouched above, never keep a cut point that lands
+            # inside a word when word-level timings are available.
+            if word_timings and transcript_window is not None:
+                word_start, word_end = transcript_window.snap_edges_to_words(
+                    final_start_time, final_end_time, word_timings)
+                if ((word_start, word_end) != (final_start_time, final_end_time)
+                        and 0 < (word_end - word_start) <= tempo_maximo + 0.01):
+                    final_start_time, final_end_time = word_start, word_end
+                    duration = final_end_time - final_start_time
+                    refinement_notes.append("word_boundary_snap")
 
             # Construct Final Segment
             hashtags = seg.get('hashtags', [])
@@ -1706,10 +2017,15 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 "topic": seg.get('topic', ''),
                 "angle": seg.get('angle', ''),
                 "hook_type": seg.get('hook_type', ''),
-                "hook_strength": seg.get('hook_strength', seg.get('score', 0)),
-                "narrative_completeness": seg.get('narrative_completeness', seg.get('score', 0)),
-                "clarity_score": seg.get('clarity_score', seg.get('score', 0)),
-                "novelty_score": seg.get('novelty_score', seg.get('score', 0)),
+                # v7.41: a missing editorial self-evaluation is stored as None
+                # — NEVER back-filled with the general virality score, which
+                # would silently present the model's own hype as a verified
+                # measurement. Deterministic heuristics rank the candidate;
+                # quality_status says whether the AI score was genuine.
+                "hook_strength": seg.get('hook_strength'),
+                "narrative_completeness": seg.get('narrative_completeness'),
+                "clarity_score": seg.get('clarity_score'),
+                "novelty_score": seg.get('novelty_score'),
                 "hashtags": hashtags,
                 # A/B titles/captions (Roadmap 5.3): kept when the AI
                 # returned them, otherwise fall back to the main title.
@@ -1720,10 +2036,8 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 "window_fingerprint": _segment_window_fingerprint(final_start_time, final_end_time),
             }
             # Transparency: when the AI shipped no self-evaluation for the
-            # editorial components, the values above were copied from the raw
-            # virality score. Flag that so the review UI / downstream stages
-            # can show "unverified editorial scores" instead of treating them
-            # as real measurements.
+            # editorial components, the values above stay None and the
+            # candidate is marked UNVERIFIED (not silently trusted).
             _component_keys = ("hook_strength", "narrative_completeness",
                                "clarity_score", "novelty_score")
             missing_components = [key for key in _component_keys
@@ -1731,6 +2045,9 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             if missing_components:
                 segment_entry["quality_missing"] = True
                 segment_entry["missing_components"] = missing_components
+                segment_entry["quality_status"] = "unverified"
+            else:
+                segment_entry["quality_status"] = "verified"
             if duration < tempo_minimo:
                 # The whole transcript is shorter than the requested minimum
                 # (or the window is pinned against the transcript edge), so
@@ -1761,7 +2078,13 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
             segment_entry["transcript_text"] = raw_window_text
             segment_entry["hook_text"] = hook_text
             segment_entry["completion_status"] = _completion_status(analysis)
-            segment_entry["quality_flags"] = quality_flags
+            # Boundary-repair notes are kept for audit; only the ones that
+            # mean "the ideal snap conflicted with the duration budget" become
+            # quality flags (spec B.8).
+            conflict_flags = [note for note in refinement_notes
+                              if "reverted" in note or "conflict" in note]
+            segment_entry["quality_flags"] = quality_flags + conflict_flags
+            segment_entry["boundary_notes"] = list(refinement_notes)
             segment_entry["rejected_reasons"] = []
             segment_entry["window_analysis"] = {
                 "before_text": analysis.get("before_text", ""),
@@ -1770,13 +2093,22 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 "leading_silence": analysis.get("leading_silence", 0.0),
                 "trailing_silence": analysis.get("trailing_silence", 0.0),
                 "speech_coverage": analysis.get("speech_coverage", 0.0),
+                "starts_mid_sentence": analysis.get("starts_mid_sentence", False),
+                "ends_mid_sentence": analysis.get("ends_mid_sentence", False),
+                "ends_incomplete": analysis.get("ends_incomplete", False),
             }
 
             if title_factual is not None:
+                # The title is validated against the EXACT clip-window text.
+                # clip_ratio (window / whole transcript) lets the validator
+                # reject a "whole video" framing on a short clip.
+                total_span = max(0.001, transcript_end_time - transcript_start_time)
+                clip_ratio = max(0.0, min(1.0, duration / total_span))
                 content_language = title_factual.detect_content_language(raw_window_text)
                 title_data = title_factual.build_title_data(
                     recommended, segment_entry.get("alt_titles") or [],
-                    raw_window_text, analysis, content_language)
+                    raw_window_text, analysis, content_language,
+                    clip_ratio=clip_ratio)
                 if title_data.get("fallback_used") and title_data.get("primary_title"):
                     # The LLM title failed factual validation: ship the
                     # conservative transcript-derived title instead and keep
@@ -1786,6 +2118,29 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                     segment_entry["title_quality_score"] = _title_quality_score(
                         title_data["primary_title"])
                 segment_entry["title_data"] = title_data
+                segment_entry["title_validation"] = title_data.get("title_validation") or {}
+                # Only factually validated alternatives may be offered to the
+                # reviewer/publisher; a hallucinated A/B title is dropped.
+                validated_alts = [
+                    item.get("text") for item in (title_data.get("alternative_titles") or [])
+                    if item.get("text")
+                ]
+                if validated_alts:
+                    segment_entry["alt_titles"] = validated_alts
+                if title_data.get("title_review_required"):
+                    segment_entry["title_review_required"] = True
+
+            # Unverified editorial scores plus a non-complete/flagged boundary
+            # cannot be auto-published: they go to manual review instead of
+            # being silently shipped.
+            if segment_entry.get("quality_status") == "unverified" and (
+                    segment_entry.get("completion_status") != "complete"
+                    or conflict_flags):
+                segment_entry["requires_review"] = True
+            if segment_entry.get("title_review_required"):
+                segment_entry["requires_review"] = True
+            segment_entry["publish_blocked_reason"] = (
+                "manual_review_required" if segment_entry.get("requires_review") else "")
             segment_entry["_analysis_cache"] = analysis
             processed_segments.append(segment_entry)
 
@@ -1802,7 +2157,7 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     selection_weights = clip_scoring.load_selection_weights() if clip_scoring else None
     for candidate in processed_segments:
         candidate["selection_score"], candidate["selection_breakdown"] = _selection_score(candidate, perf_weights)
-        # v7.40: the 11-factor editorial score becomes the primary selection
+        # v7.41: the 12-factor editorial score becomes the primary selection
         # score. The legacy six-component breakdown above is kept for
         # backwards compatibility (review UI, performance learning), and the
         # new factor-by-factor breakdown ships as ``score_breakdown``.
@@ -1890,24 +2245,62 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
 
     final_result = {"segments": all_segments}
 
-    # v7.40: record the exact selection configuration that produced these
-    # segments (weights + schema/prompt versions) so staleness checks and the
-    # review UI can tell which pipeline generated the list.
+    # v7.40/v7.41: record the exact selection configuration that produced
+    # these segments (weights + schema/prompt versions + transcript content)
+    # so staleness checks and the review UI can tell which pipeline generated
+    # the list — and so a changed transcript/weight override forces
+    # regeneration instead of silently reusing old windows/titles.
     if clip_scoring is not None:
         final_result["selection_config"] = {
             "schema_version": SEGMENTS_SCHEMA_VERSION,
             "scoring_version": clip_scoring.SCORING_VERSION,
+            "title_schema_version": getattr(
+                title_factual, "TITLE_VALIDATION_SCHEMA_VERSION", "legacy"),
             "prompt_version": prompt_version_fingerprint(),
             "weights": selection_weights or dict(clip_scoring.DEFAULT_SELECTION_WEIGHTS),
+            "weights_fingerprint": selection_weights_fingerprint(),
+            "transcript_fingerprint": transcript_fingerprint(transcript_segments),
         }
 
-    # Validação básica de que temos start_time
+    # v7.41: ONE reusable final validator, called here before the segments can
+    # be saved/cut/published. Structured errors (not just a bool) are attached
+    # to the payload; only FATAL errors exclude a window from export — a
+    # boundary that max_duration forced mid-sentence is a review flag, not a
+    # reason to discard the best available window.
     validated_segments = []
-    for seg in final_result['segments']:
-        if 'start_time' in seg:
-             validated_segments.append(seg)
+    validation_errors = []
+    for index, seg in enumerate(final_result['segments']):
+        if 'start_time' not in seg:
+            continue
+        if segment_validator is not None:
+            report = segment_validator.validate_final_segment(
+                seg,
+                min_duration=tempo_minimo,
+                max_duration=tempo_maximo,
+                media_duration=media_duration,
+                require_title=False,
+            )
+            seg["final_validation"] = report
+            fatal = [item for item in report.get("errors", [])
+                     if item.get("code") in FATAL_VALIDATION_CODES]
+            if not report.get("ok") and fatal:
+                validation_errors.append({
+                    "index": index,
+                    "title": str(seg.get("title") or seg.get("recommended_title") or ""),
+                    "errors": fatal,
+                })
+                print("[WARN] Final validator rejected '{}': {}".format(
+                    seg.get("title", "Untitled"),
+                    "; ".join(str(item.get("message")) for item in fatal)))
+                continue
+            if not report.get("ok"):
+                seg["requires_review"] = True
+                seg["publish_blocked_reason"] = "manual_review_required"
+        validated_segments.append(seg)
 
     final_result['segments'] = validated_segments
+    if validation_errors:
+        final_result["validation_errors"] = validation_errors
 
     return final_result
 

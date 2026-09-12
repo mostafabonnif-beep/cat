@@ -26,16 +26,29 @@ def _sentence_transcript():
     ]
 
 
-def test_reversed_explicit_window_is_swapped_not_relocated():
+def test_reversed_window_without_text_anchors_is_rejected():
+    # v7.41: a reversed window is never silently swapped — without reliable
+    # start_text/end_text recovery the candidate is rejected outright.
     transcript = _sentence_transcript()
     raw = [{"title": "Reversed", "start_time": 30, "end_time": 12,
             "score": 90}]
     result = cvs.process_segments(raw, transcript, 5, 60,
                                   snap_to_boundaries=False)
+    assert result["segments"] == []
+
+
+def test_reversed_window_is_recovered_from_text_anchors():
+    # When start_text/end_text align to real transcript lines, the intended
+    # window is recovered from them (not from the reversed numbers).
+    transcript = _sentence_transcript()
+    raw = [{"title": "Recovered", "start_time": 30, "end_time": 12, "score": 90,
+            "start_text": "first long sentence here",
+            "end_text": "second long sentence here"}]
+    result = cvs.process_segments(raw, transcript, 5, 60,
+                                  snap_to_boundaries=False)
     seg = result["segments"][0]
-    assert seg["start_time"] == 12.0
-    assert seg["end_time"] == 30.0
-    assert seg["duration"] == 18.0
+    assert seg["start_time"] == 0.0
+    assert seg["end_time"] == 21.0
 
 
 def test_clamped_explicit_end_is_snapped_to_sentence_end():
@@ -51,16 +64,17 @@ def test_clamped_explicit_end_is_snapped_to_sentence_end():
     assert seg["duration"] >= 15.0
 
 
-def test_clean_explicit_window_is_still_trusted_unsnapped():
-    # Fully explicit, never adjusted by the clamp: the model's own edges are
-    # the documented contract and must remain byte-exact (no snapping).
+def test_explicit_numeric_window_is_boundary_validated():
+    # v7.41: explicit numeric windows are no longer trusted just because they
+    # are numeric. This one ends mid-sentence inside B, so it is snapped to
+    # B's sentence end — a word/sentence-safe boundary.
     transcript = _sentence_transcript()
     raw = [{"title": "Exact", "start_time": 11.0, "end_time": 16.5,
             "score": 90}]
     result = cvs.process_segments(raw, transcript, 5, 60)
     seg = result["segments"][0]
     assert seg["start_time"] == 11.0
-    assert seg["end_time"] == 16.5
+    assert seg["end_time"] == 21.0
 
 
 def test_snap_never_breaks_min_duration_after_clamp():

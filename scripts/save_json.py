@@ -7,6 +7,18 @@ from i18n.i18n import I18nAuto
 
 i18n = I18nAuto()
 
+# v7.41: the final segment validator runs before viral_segments.txt is
+# written, so a structurally invalid window can never reach the cut/publish
+# stages unnoticed. Imported defensively: saving must never fail because the
+# (stdlib-only) validator is unavailable.
+try:
+    from scripts import segment_validator as _segment_validator
+except Exception:
+    try:
+        import segment_validator as _segment_validator
+    except Exception:
+        _segment_validator = None
+
 
 def _atomic_write_json(path, data):
     directory = os.path.dirname(os.path.abspath(path)) or "."
@@ -31,6 +43,15 @@ def save_viral_segments(segments_data=None, project_folder="tmp", overwrite=Fals
 
     # Sobrescrita explícita (usado pelo filtro de segurança)
     if overwrite and segments_data is not None:
+        # v7.41: validate every window before persisting (spec F — the final
+        # validator runs before saving viral_segments.txt). Annotation only
+        # adds audit fields; it never changes the window itself.
+        if _segment_validator is not None and isinstance(segments_data, dict):
+            try:
+                segments_data = _segment_validator.annotate_segment_validation(
+                    segments_data, require_title=False)
+            except Exception:
+                pass
         _atomic_write_json(output_txt_file, segments_data)
         print(i18n("Viral segments saved to {}").format(output_txt_file) + "\n")
         return

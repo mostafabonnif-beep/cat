@@ -720,12 +720,15 @@ def test_long_pause_creates_boundary_and_silence_flags():
 def test_centralized_weights_sum_to_one_and_match_spec():
     weights = clip_scoring.DEFAULT_SELECTION_WEIGHTS
     assert weights == {
-        "hook_strength": 0.20, "standalone_context": 0.18,
-        "emotional_value": 0.15, "information_density": 0.12,
-        "completion_score": 0.12, "transcript_alignment": 0.10,
-        "audio_quality": 0.05, "visual_quality": 0.04, "title_relevance": 0.04,
+        "hook_strength": 0.18, "standalone_context": 0.14,
+        "narrative_completeness": 0.13, "information_density": 0.12,
+        "emotional_value": 0.13, "transcript_alignment": 0.10,
+        "boundary_quality": 0.08, "audio_quality": 0.05,
+        "visual_quality": 0.03, "title_relevance": 0.04,
     }
     assert sum(weights.values()) == pytest.approx(1.0)
+    assert set(clip_scoring.FACTOR_NAMES) == set(weights) | {
+        "repetition_penalty", "safety_penalty"}
 
 
 def test_final_score_formula_with_penalties():
@@ -741,10 +744,10 @@ def test_weights_env_override(monkeypatch):
     weights = clip_scoring.load_selection_weights()
     assert weights["hook_strength"] == 0.5
     assert "bogus_key" not in weights
-    assert weights["standalone_context"] == 0.18   # untouched default
+    assert weights["standalone_context"] == 0.14  # untouched default
 
 
-def test_score_breakdown_contains_all_eleven_factors():
+def test_score_breakdown_contains_all_twelve_factors():
     transcript = _arabic_transcript()
     raw = [_candidate("breakdown", 6.0, 28.0)]
     seg = cvs.process_segments(raw, transcript, 10, 60)["segments"][0]

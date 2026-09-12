@@ -163,5 +163,5 @@ O ViralCutter é mantido pela comunidade. Junte-se a nós para democratizar a cr
 - ✅ **Instalação reproduzível**: `uv sync` (usa `uv.lock`); o fluxo clássico `install_dependencies.bat` continua igual.
 
 
-**Versão Atual**: 7.40.0-pro — qualidade de seleção de clipes: pontuação editorial de 11 fatores, cortes seguros nas fronteiras de palavras/frases (com rolagem pré/pós configurável), títulos factualmente verificados contra a transcrição exata do clipe, desduplicação semântica, árabe aprimorado e regeneração automática ao mudar configurações (--force-regenerate)
+**Versão Atual**: 7.41.0-pro — validação final unificada dos segmentos, títulos verificados factualmente (incluindo recommended_title/alt_titles), corte seguro em timestamps numéricos explícitos, rejeição de janelas invertidas, status de qualidade verificado/não verificado, expansão de clipes curtos consciente do contexto, 12 fatores de pontuação e desduplicação semântica
 *ViralCutter: Porque clips virais não precisam custar uma fortuna.* 🚀

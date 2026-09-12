@@ -62,6 +62,50 @@ def effective_title(segment):
     return str(segment.get("recommended_title") or segment.get("title") or "").strip()
 
 
+def _load_segment_entry(project_folder, index):
+    """Load one segment dict from viral_segments.txt (None when unavailable)."""
+    if index is None:
+        return None
+    try:
+        path = os.path.join(project_folder, VIRAL_SEGMENTS_FILE)
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        segments = payload.get("segments") if isinstance(payload, dict) else None
+        if isinstance(segments, list):
+            index = int(index)
+            if 0 <= index < len(segments) and isinstance(segments[index], dict):
+                return segments[index]
+    except Exception:
+        return None
+    return None
+
+
+def _segment_review_reasons(project_folder, index):
+    """Publish-time enforcement of the selection review flags (v7.41).
+
+    The selection pipeline marks segments that must not go out automatically:
+    ``export_blocked`` (fatal validation), ``requires_review`` (unverified
+    editorial scores plus a non-complete/flagged boundary) and
+    ``title_review_required`` (no factually verifiable title). Refusing them
+    here is what "must not be exported automatically" means in practice.
+    """
+    entry = _load_segment_entry(project_folder, index)
+    if not entry:
+        return []
+    if entry.get("export_blocked"):
+        detail = "segment failed final validation; export blocked"
+    elif entry.get("requires_review") or entry.get("title_review_required"):
+        detail = "segment requires manual review before publishing ({})".format(
+            entry.get("publish_blocked_reason") or "manual_review_required")
+    else:
+        return []
+    return [{
+        "source": "segment_validation",
+        "detail": detail,
+        "severity": "high",
+    }]
+
+
 class UploadGateError(Exception):
     """Raised when a clip must not be published. Carries structured reasons."""
 
@@ -225,6 +269,10 @@ def check_clip(project_folder, index=None, title="", caption="", hashtags=None,
     reasons += _blocklist_reasons(project_folder, index)
     reasons += _provenance_reasons(project_folder, index)
     reasons += _safety_report_reasons(project_folder, index)
+    # v7.41: an unverified/needs-review segment (missing editorial self-eval
+    # plus a non-complete boundary, an unverified title, or a fatal final
+    # validation) must never be auto-published — it goes to manual review.
+    reasons += _segment_review_reasons(project_folder, index)
 
     # Audio copyright fingerprint report (Roadmap 2.3) — optional module.
     try:

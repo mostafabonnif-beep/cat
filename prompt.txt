@@ -58,6 +58,7 @@ The transcript below is a continuous text stream with embedded **Time Tags** lik
     -   Do not choose a clip only because it contains a popular keyword; the clip must stand on its own as a complete moment.
     -   NEVER use empty clickbait such as "لن تصدق ما حدث", "هذه المعلومة ستغير حياتك", "سر خطير", "الجميع مخطئون", "اكتشاف صادم" (or the English equivalents) unless the clip's own words literally support that claim.
     -   If the context is insufficient or ambiguous, prefer a conservative descriptive title and LOWER the editorial scores — reject the clip instead of guessing.
+    -   The SAME factual rule applies to `recommended_title`, `title` AND every entry in `alt_titles`: none of them may contain a number, name, brand, amount, date, result or claim that is absent from the exact clip transcript. Unverifiable titles are rejected downstream, so do not emit them.
 
 9.  **BOUNDARIES (BEGIN AND END CLEANLY):**
     -   The clip must begin at a natural word or sentence boundary and end only after the idea is complete.

@@ -162,5 +162,5 @@ ViralCutter is community-maintained. Join us to democratize AI content creation!
 - ✅ **Reproducible installs**: `uv sync` (uses `uv.lock`); the classic `install_dependencies.bat` flow still works.
 
 
-**Current Version**: 7.40.0-pro — clip-selection quality: centralized 11-factor editorial scoring, word/sentence-boundary-safe cuts with configurable pre/post-roll, titles fact-checked against the exact clip transcript, semantic deduplication, stronger Arabic handling, and automatic regeneration when settings change (--force-regenerate)
+**Current Version**: 7.41.0-pro — one reusable final segment validator, fact-checked titles (including recommended_title/alt_titles), word-safe snapping of explicit numeric timestamps, reversed-window rejection, verified/unverified quality status, context-aware short-clip expansion, 12-factor scoring, and semantic deduplication
 *ViralCutter: Because viral clips shouldn't cost a fortune.* 🚀

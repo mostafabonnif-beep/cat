@@ -4,7 +4,27 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scripts import cut_json
-from scripts.media_validation import validate_media_file
+from scripts.media_validation import probe_media, validate_media_file
+
+# v7.41: the reusable final validator runs before any FFmpeg cut, so an
+# out-of-range or malformed window can never be rendered. Imported
+# defensively to keep cutting operational if the module is missing.
+try:
+    from scripts import segment_validator
+except Exception:
+    segment_validator = None
+
+
+def _has_stored_transcript(segment):
+    """True when the segment carries any stored transcript text field."""
+    if not isinstance(segment, dict):
+        return False
+    if str(segment.get("transcript_text") or "").strip():
+        return True
+    analysis = segment.get("window_analysis")
+    if isinstance(analysis, dict) and str(analysis.get("text") or "").strip():
+        return True
+    return bool(str(segment.get("text") or "").strip())
 
 
 def _parse_time_value(value, treat_int_as_ms=False):
@@ -281,6 +301,45 @@ def cut(response, project_folder="tmp", skip_video=False, workers=None, source_v
                     print("[cut] snapped {} segment(s) to scene boundaries".format(snapped))
             except Exception as exc:
                 print("[cut] scene detection skipped: {}".format(exc))
+
+        # v7.41: final validation BEFORE cutting (spec F). Windows whose fatal
+        # errors survive scene snapping are dropped here rather than handed to
+        # ffmpeg; review-flagged (non-fatal) windows still cut but stay marked
+        # so the publish gate refuses them.
+        if segment_validator is not None:
+            media_duration = None
+            try:
+                probe_report = probe_media(input_file)
+                if isinstance(probe_report, dict) and probe_report.get("ok"):
+                    media_duration = float(probe_report.get("duration") or 0) or None
+            except Exception:
+                media_duration = None
+            allowed = []
+            for seg in segments_list:
+                if not isinstance(seg, dict):
+                    allowed.append(seg)
+                    continue
+                report = segment_validator.validate_final_segment(
+                    seg, media_duration=media_duration, require_title=False)
+                seg["final_validation"] = report
+                fatal = [item for item in report.get("errors", [])
+                         if item.get("code") in segment_validator.FATAL_ERROR_CODES]
+                # Legacy / hand-edited segment without any stored transcript:
+                # the missing-transcript check is not actionable here (the
+                # pipeline validated the window when it was generated), so
+                # only the other fatal codes block the cut.
+                if fatal and not _has_stored_transcript(seg):
+                    fatal = [item for item in fatal
+                             if item.get("code") != "empty_transcript"]
+                if fatal:
+                    print("[cut] Refusing to cut invalid segment '{}': {}".format(
+                        seg.get("title", "Untitled"),
+                        "; ".join(str(item.get("message")) for item in fatal)))
+                    continue
+                allowed.append(seg)
+            segments_list = allowed
+            if not segments_list:
+                raise ValueError("No safe segments to process.")
 
         if not skip_video:
             # A rerun must reflect the current safe segment list, not stale cuts

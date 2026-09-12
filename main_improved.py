@@ -200,6 +200,10 @@ def _segment_settings_fingerprint(args):
         "transcribe_model": getattr(args, "model", None),
         "scene_snap": bool(getattr(args, "scene_snap", False)),
         "prompt_version": create_viral_segments.prompt_version_fingerprint(),
+        # v7.41: a runtime selection-weights override (or a scoring-version
+        # bump) changes which clips are chosen, so it belongs in the settings
+        # fingerprint — not only in the saved payload.
+        "selection_weights": create_viral_segments.selection_weights_fingerprint(),
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False,
                      separators=(",", ":"))
@@ -997,12 +1001,26 @@ def main():
                               if input_video else None)
                 stored_cfg = ((existing_data or {}).get("source_meta", {}) or {}).get("config_fp")
                 current_cfg = _segment_settings_fingerprint(args)
+                # v7.41: a changed transcript (re-transcription) invalidates the
+                # saved windows/titles too. Only compared when a transcript is
+                # actually available at this stage; otherwise the config/source
+                # fingerprints above remain authoritative.
+                stored_transcript = ((existing_data or {}).get("source_meta", {}) or {}).get("transcript_fp")
+                current_transcript = None
+                try:
+                    _existing_transcript = create_viral_segments.load_transcript(project_folder)
+                    current_transcript = create_viral_segments.transcript_fingerprint(_existing_transcript)
+                except Exception:
+                    current_transcript = None
                 if stored_fp and current_fp and stored_fp != current_fp:
                     use_existing_json = 'no'
                     print(i18n("Input video changed since these segments were generated; regenerating segments."))
                 elif stored_cfg and stored_cfg != current_cfg:
                     use_existing_json = 'no'
                     print(i18n("Segment settings changed since these segments were generated; regenerating segments."))
+                elif stored_transcript and current_transcript and stored_transcript != current_transcript:
+                    use_existing_json = 'no'
+                    print(i18n("Transcript changed since these segments were generated; regenerating segments."))
                 else:
                     use_existing_json = 'yes'
             else:
@@ -1500,6 +1518,12 @@ def main():
                               if _source_fp:
                                   viral_segments.setdefault("source_meta", {})["source_video_fp"] = _source_fp
                               viral_segments.setdefault("source_meta", {})["config_fp"] = _segment_settings_fingerprint(args)
+                              try:
+                                  _transcript_fp = create_viral_segments.transcript_fingerprint(transcript)
+                                  if _transcript_fp:
+                                      viral_segments.setdefault("source_meta", {})["transcript_fp"] = _transcript_fp
+                              except Exception:
+                                  pass
                           save_json.save_viral_segments(viral_segments, project_folder=project_folder, overwrite=True)
                           print(i18n("Segments aligned and saved."))
                       except Exception as e:
