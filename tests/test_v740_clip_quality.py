@@ -26,7 +26,6 @@ import argparse
 import json
 import os
 import sys
-import types
 from unittest import mock
 
 import pytest
@@ -35,7 +34,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts import arabic_text, clip_scoring, title_factual, transcript_window
 from scripts import create_viral_segments as cvs
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

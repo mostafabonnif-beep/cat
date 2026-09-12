@@ -284,14 +284,16 @@ def analyze_window(transcript_segments, start_time, end_time, context_span=12.0)
     if not lines:
         return result
 
-    inside = [l for l in lines if l["start"] < end_time and l["end"] > start_time]
-    before = [l for l in lines if l["end"] <= start_time and l["end"] > start_time - context_span]
-    after = [l for l in lines if l["start"] >= end_time and l["start"] < end_time + context_span]
+    inside = [line for line in lines if line["start"] < end_time and line["end"] > start_time]
+    before = [line for line in lines
+              if line["end"] <= start_time and line["end"] > start_time - context_span]
+    after = [line for line in lines
+             if line["start"] >= end_time and line["start"] < end_time + context_span]
 
-    text = " ".join(l["text"] for l in inside).strip()
+    text = " ".join(line["text"] for line in inside).strip()
     result["text"] = text
-    result["before_text"] = " ".join(l["text"] for l in before).strip()
-    result["after_text"] = " ".join(l["text"] for l in after).strip()
+    result["before_text"] = " ".join(line["text"] for line in before).strip()
+    result["after_text"] = " ".join(line["text"] for line in after).strip()
 
     words = _words_normalized(text)
     result["word_count"] = len(words)
