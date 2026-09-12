@@ -51,6 +51,20 @@ The transcript below is a continuous text stream with embedded **Time Tags** lik
     -   Even if such a moment looks "viral", it will get the channel a YouTube strike — it is WORTHLESS. Skip it and find a clean alternative.
     -   Quoting hate speech to condemn it is only acceptable if the segment clearly frames it as condemnation; when in doubt, SKIP.
 
+8.  **FACTUAL TITLES ONLY (CLIP TRANSCRIPT == THE ONLY SOURCE OF TRUTH):**
+    -   The title must describe THE SELECTED CLIP, not the entire source video. Judge every title against the exact words spoken between the clip's own start and end — never against the rest of this transcript.
+    -   Do not mention any fact, person, number, result, or claim that is not explicitly present in the clip's own transcript.
+    -   Do not invent conclusions, outcomes, prices, statistics, names, or "before/after" results. If the clip does not state it, the title must not claim it.
+    -   Do not choose a clip only because it contains a popular keyword; the clip must stand on its own as a complete moment.
+    -   NEVER use empty clickbait such as "لن تصدق ما حدث", "هذه المعلومة ستغير حياتك", "سر خطير", "الجميع مخطئون", "اكتشاف صادم" (or the English equivalents) unless the clip's own words literally support that claim.
+    -   If the context is insufficient or ambiguous, prefer a conservative descriptive title and LOWER the editorial scores — reject the clip instead of guessing.
+
+9.  **BOUNDARIES (BEGIN AND END CLEANLY):**
+    -   The clip must begin at a natural word or sentence boundary and end only after the idea is complete.
+    -   Never start with an isolated conjunction (لكن، لذلك، لأن، وهذا، فهو، ثم، فإذا، ولكن / "so", "and then", "but") unless the sentence is fully understandable alone — prefer starting one sentence earlier.
+    -   Never end on a preposition, a conjunction, or an unfinished clause — extend to the end of the sentence instead.
+    -   Do not guess timestamps when the (XXs) tags already give you a reliable anchor.
+
 ### YOUR TASK:
 Analyze the transcript below. Find {amount} potential viral segments.
 For each candidate, estimate `hook_strength`, `narrative_completeness`, and `clarity_score` from 0 to 100. These are editorial estimates, not facts; never inflate them merely to increase virality.
@@ -58,7 +72,7 @@ For each candidate, estimate `hook_strength`, `narrative_completeness`, and `cla
 TRANSCRIPT:
 {transcript_chunk}
 
-### OUTPUT FORMAT (JSON ONLY):
+### OUTPUT FORMAT (JSON ONLY — no markdown, no commentary, no trailing text):
 {json_template}
 
 Return ONLY VALID JSON. No markdown, no commentary.

@@ -171,14 +171,20 @@ def parse_face_detect_interval(raw_value):
 
 
 def _segment_settings_fingerprint(args):
-    """Deterministic fingerprint of the segment-generation settings (v7.32).
+    """Deterministic fingerprint of the segment-generation settings (v7.32,
+    extended v7.40).
 
     Stored as ``source_meta.config_fp`` next to the source-video fingerprint
     whenever viral segments are saved. The ``--skip-prompts`` reuse check
     compares it before loading: windows chosen for the OLD min/max duration,
     chunk size, language or count must not be reused after the user changes
-    those settings. Built ONLY from argparse values so the pre-prompts reuse
-    check and the post-generation save compute the identical payload.
+    those settings. v7.40 additionally fingerprints the viral/themes mode,
+    the AI backend + model, the transcription model, scene snapping, the
+    selection-scoring version and the prompt version — any change to those
+    changes which clips are chosen, so old results are regenerated instead
+    of silently reused. Built ONLY from argparse values (plus the stable
+    module-level version fingerprints) so the pre-prompts reuse check and
+    the post-generation save compute the identical payload.
     """
     payload = {
         "segments": getattr(args, "segments", None),
@@ -186,6 +192,14 @@ def _segment_settings_fingerprint(args):
         "max_duration": getattr(args, "max_duration", None),
         "chunk_size": getattr(args, "chunk_size", None),
         "title_language": getattr(args, "title_language", None),
+        # v7.40 additions (None on old callers → stable comparison):
+        "viral": bool(getattr(args, "viral", False)),
+        "themes": str(getattr(args, "themes", None) or ""),
+        "ai_backend": getattr(args, "ai_backend", None),
+        "ai_model_name": getattr(args, "ai_model_name", None),
+        "transcribe_model": getattr(args, "model", None),
+        "scene_snap": bool(getattr(args, "scene_snap", False)),
+        "prompt_version": create_viral_segments.prompt_version_fingerprint(),
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False,
                      separators=(",", ":"))
@@ -743,9 +757,11 @@ def main():
     parser.add_argument("--reframe-mode", choices=["crop", "pad"], default=None,
                         help="Reframe method: crop=fill+center-crop (default for 4:5/1:1), "
                              "pad=blurred bars (default for 16:9).")
-    parser.add_argument("--force-new-segments", action="store_true",
+    parser.add_argument("--force-new-segments", "--force-regenerate", dest="force_new_segments",
+                        action="store_true",
                         help="Ignore an existing viral_segments.txt and generate fresh "
-                             "segments (the WebUI 'generate new segments' checkbox).")
+                             "segments (the WebUI 'generate new segments' checkbox; "
+                             "--force-regenerate is the explicit CLI alias).")
     parser.add_argument("--auto-learn-blocked", action="store_true",
                         help="After the risk scorecard, automatically teach the safety terms "
                              "the patterns that got clips blocked (strike-feedback loop, 5.1). "

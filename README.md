@@ -163,5 +163,5 @@ O ViralCutter é mantido pela comunidade. Junte-se a nós para democratizar a cr
 - ✅ **Instalação reproduzível**: `uv sync` (usa `uv.lock`); o fluxo clássico `install_dependencies.bat` continua igual.
 
 
-**Versão Atual**: 7.36.0-pro — inteligência de locutor (voz-face) agora disponível na interface, além do upload em lote e do cartão de novidades
+**Versão Atual**: 7.40.0-pro — qualidade de seleção de clipes: pontuação editorial de 11 fatores, cortes seguros nas fronteiras de palavras/frases (com rolagem pré/pós configurável), títulos factualmente verificados contra a transcrição exata do clipe, desduplicação semântica, árabe aprimorado e regeneração automática ao mudar configurações (--force-regenerate)
 *ViralCutter: Porque clips virais não precisam custar uma fortuna.* 🚀

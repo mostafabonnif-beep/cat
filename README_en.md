@@ -162,5 +162,5 @@ ViralCutter is community-maintained. Join us to democratize AI content creation!
 - ✅ **Reproducible installs**: `uv sync` (uses `uv.lock`); the classic `install_dependencies.bat` flow still works.
 
 
-**Current Version**: 7.36.0-pro — speaker intelligence: voice-face linking (which face owns the active speaker) is now switchable right from the WebUI, plus batch-upload UI and a what's-new card
+**Current Version**: 7.40.0-pro — clip-selection quality: centralized 11-factor editorial scoring, word/sentence-boundary-safe cuts with configurable pre/post-roll, titles fact-checked against the exact clip transcript, semantic deduplication, stronger Arabic handling, and automatic regeneration when settings change (--force-regenerate)
 *ViralCutter: Because viral clips shouldn't cost a fortune.* 🚀

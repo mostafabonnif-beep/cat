@@ -13,6 +13,22 @@ try:
 except Exception:
     performance_weights = None
 
+# v7.40: centralized clip-quality modules (stdlib-only, deterministic).
+# Arabic normalization lives canonically in scripts/arabic_text and is
+# re-exported below under the historical private names so existing callers
+# and tests keep working unchanged.
+try:
+    from scripts import arabic_text as _arabic_text
+except Exception:
+    _arabic_text = None
+
+try:
+    from scripts import clip_scoring, title_factual, transcript_window
+    HAS_CLIP_QUALITY = True
+except Exception:
+    clip_scoring = title_factual = transcript_window = None
+    HAS_CLIP_QUALITY = False
+
 # Configura stdout para evitar erros de encoding no Windows (substitui caracteres inválidos por ?)
 # Aplicado apenas no Windows — em Linux/macOS (e no CI/pytest) o stdout nativo já é UTF-8
 # e substituí-lo quebraria o capture do pytest.
@@ -521,6 +537,9 @@ def _bounded_score(value, default=0.0):
 
 
 # Arabic orthography unification table (ord -> replacement, None = delete).
+# Canonical implementation: scripts/arabic_text.py. Kept here as a thin
+# re-export so existing callers/tests of the historical private names
+# (`_normalize_arabic_orthography`, `_normalized_match_text`) are untouched.
 # Arabic text is routinely written with several spelling variants of the same
 # letters: the hamza carriers (أ إ آ ٱ) are the same consonant as plain ا in
 # almost every context, ؤ/ئ are و/ي with a hamza seat, ة and ه both mark the
@@ -529,23 +548,27 @@ def _bounded_score(value, default=0.0):
 # alef (U+0670) are optional decorations that never change the word.
 # Deliberately NOT mapped: alif maqsura ى stays distinct from ي so pairs like
 # على (on) / علي (a name) never collide, and ي itself is untouched.
-_ARABIC_ORTHOGRAPHY_TABLE = {
-    0x0623: 0x0627,  # أ hamza above    -> ا
-    0x0625: 0x0627,  # إ hamza below    -> ا
-    0x0622: 0x0627,  # آ madda          -> ا
-    0x0671: 0x0627,  # ٱ wasla          -> ا
-    0x0624: 0x0648,  # ؤ hamza on waw   -> و
-    0x0626: 0x064A,  # ئ hamza on yaa   -> ي
-    0x0629: 0x0647,  # ة ta marbuta     -> ه
-    0x0640: None,    # tatweel (stretch mark) — deleted
-    0x0670: None,    # superscript alef — deleted
-}
-_ARABIC_ORTHOGRAPHY_TABLE.update({cp: None for cp in range(0x064B, 0x0660)})
+if _arabic_text is not None:
+    _ARABIC_ORTHOGRAPHY_TABLE = _arabic_text._ARABIC_ORTHOGRAPHY_TABLE
+else:
+    _ARABIC_ORTHOGRAPHY_TABLE = {
+        0x0623: 0x0627,  # أ hamza above    -> ا
+        0x0625: 0x0627,  # إ hamza below    -> ا
+        0x0622: 0x0627,  # آ madda          -> ا
+        0x0671: 0x0627,  # ٱ wasla          -> ا
+        0x0624: 0x0648,  # ؤ hamza on waw   -> و
+        0x0626: 0x064A,  # ئ hamza on yaa   -> ي
+        0x0629: 0x0647,  # ة ta marbuta     -> ه
+        0x0640: None,    # tatweel (stretch mark) — deleted
+        0x0670: None,    # superscript alef — deleted
+    }
+    _ARABIC_ORTHOGRAPHY_TABLE.update({cp: None for cp in range(0x064B, 0x0660)})
 
 
 def _normalize_arabic_orthography(text):
     """Unify common Arabic spelling variants so matching is orthography-blind.
 
+    Delegates to scripts.arabic_text.normalize_arabic_orthography (canonical).
     Translates hamza carriers (أ إ آ ٱ -> ا, ؤ -> و, ئ -> ي) and the ta
     marbuta (ة -> ه), and removes tatweel (U+0640), the tashkeel block
     (U+064B..U+065F) and the superscript alef (U+0670). Alif maqsura (ى) is
@@ -555,6 +578,8 @@ def _normalize_arabic_orthography(text):
     Pure function with no state: non-Arabic text (English included) passes
     through byte-identical, so this never alters Latin/ASCII output.
     """
+    if _arabic_text is not None:
+        return _arabic_text.normalize_arabic_orthography(text)
     if text is None:
         return ""
     return str(text).translate(_ARABIC_ORTHOGRAPHY_TABLE)
@@ -872,16 +897,23 @@ def _rank_segments_with_diversity(segments, limit=None):
     return ranked
 
 
-_ARABIC_NUM_TRANSLATION = str.maketrans({
-    # Arabic-Indic digits U+0660..U+0669 (٠١٢٣٤٥٦٧٨٩)
-    **{ord(src): dst for src, dst in zip("٠١٢٣٤٥٦٧٨٩", "0123456789")},
-    # Persian digits U+06F0..U+06F9 (۰۱۲۳۴۵۶۷۸۹)
-    **{ord(src): dst for src, dst in zip("۰۱۲۳۴۵۶۷۸۹", "0123456789")},
-    # Arabic decimal separator ٫ (U+066B) and the Arabic comma ٬ (U+066C)
-    # — Arabic/Darija LLM output routinely uses both as a decimal point.
-    0x066B: ".",
-    0x066C: ".",
-})
+if _arabic_text is not None:
+    _ARABIC_NUM_TRANSLATION = str.maketrans({})
+    _normalize_timestamp_digits = _arabic_text.normalize_digits
+else:
+    _ARABIC_NUM_TRANSLATION = str.maketrans({
+        # Arabic-Indic digits U+0660..U+0669 (٠١٢٣٤٥٦٧٨٩)
+        **{ord(src): dst for src, dst in zip("٠١٢٣٤٥٦٧٨٩", "0123456789")},
+        # Persian digits U+06F0..U+06F9 (۰۱۲۳۴۵۶۷۸۹)
+        **{ord(src): dst for src, dst in zip("۰۱۲۳۴۵۶۷۸۹", "0123456789")},
+        # Arabic decimal separator ٫ (U+066B) and the Arabic comma ٬ (U+066C)
+        # — Arabic/Darija LLM output routinely uses both as a decimal point.
+        0x066B: ".",
+        0x066C: ".",
+    })
+
+    def _normalize_timestamp_digits(value):
+        return str(value).translate(_ARABIC_NUM_TRANSLATION)
 
 
 def _normalize_timestamp_text(value):
@@ -891,7 +923,7 @@ def _normalize_timestamp_text(value):
     without this translation ``int()``/``float()`` reject them and the
     segment silently falls back to default timings.
     """
-    return str(value).translate(_ARABIC_NUM_TRANSLATION)
+    return _normalize_timestamp_digits(str(value))
 
 
 def _parse_segment_time(value, default=0.0):
@@ -992,8 +1024,61 @@ def segments_source_fingerprint(data):
     return source_meta.get("source_video_fp")
 
 
-def deduplicate_segments(segments):
-    """Keep the highest-scoring candidate for each source window."""
+# Schema/prompt versioning (v7.40): embedded in the segments config
+# fingerprint so changing the selection schema, the scoring weights or the
+# prompt template invalidates previously saved results instead of silently
+# reusing them.
+SEGMENTS_SCHEMA_VERSION = "2.0"
+
+
+def prompt_version_fingerprint():
+    """Stable fingerprint of the ACTIVE prompt template + segment schema.
+
+    sha1 of prompt.txt (the file actually sent to the LLM) combined with the
+    selection-schema and scoring versions. Editing prompt.txt, upgrading the
+    scoring formula or the JSON schema all change this value → cached segment
+    lists are regenerated rather than reused.
+    """
+    template = ""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        prompt_path = os.path.join(base_dir, "prompt.txt")
+        if os.path.exists(prompt_path):
+            with open(prompt_path, "r", encoding="utf-8") as handle:
+                template = handle.read()
+    except Exception:
+        template = ""
+    scoring_version = getattr(clip_scoring, "SCORING_VERSION", "legacy") if clip_scoring else "legacy"
+    payload = "{}|{}|{}".format(SEGMENTS_SCHEMA_VERSION, scoring_version, template)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_word_timings(project_folder):
+    """Word-level timings [{start,end,word}] for boundary snapping (v7.40).
+
+    Reads the WhisperX input.json via scripts/transcript_window; returns []
+    when unavailable so callers fall back to segment-level timings.
+    """
+    if transcript_window is None:
+        return []
+    try:
+        return transcript_window.load_word_timings(project_folder)
+    except Exception:
+        return []
+
+
+def deduplicate_segments(segments, semantic_threshold=None):
+    """Keep the highest-scoring candidate for each source window / idea.
+
+    Two levels (v7.40):
+    * Temporal — windows sharing >= 60% of the shorter window are the same
+      footage (``_windows_are_near_duplicates``).
+    * Semantic — when candidates carry ``transcript_text`` (v7.40+), clips
+      whose normalized window text is at/above the duplicate threshold
+      express the same idea with different wording; only the strongest
+      version is kept. Legacy payloads without ``transcript_text`` simply
+      skip this level (full backwards compatibility).
+    """
     ordered = sorted(
         list(segments or []),
         key=lambda item: float(item.get("selection_score", item.get("score", 0)) or 0),
@@ -1006,8 +1091,39 @@ def deduplicate_segments(segments):
         if any(_windows_are_near_duplicates(candidate, existing) for existing in unique):
             print("[DEBUG] Dropping duplicate source window: {}".format(candidate.get("title", "Untitled")))
             continue
+        if _is_semantic_duplicate(candidate, unique, semantic_threshold):
+            print("[DEBUG] Dropping semantically duplicate clip (same idea): {}".format(
+                candidate.get("title", "Untitled")))
+            continue
         unique.append(candidate)
     return _rank_segments_with_diversity(unique)
+
+
+def _is_semantic_duplicate(candidate, existing, threshold=None):
+    """True when ``candidate`` repeats the idea of an already-kept clip.
+
+    Only compares candidates that BOTH carry transcript_text; title
+    differences alone never make two clips different, and missing text never
+    makes them duplicates.
+    """
+    if transcript_window is None:
+        return False
+    candidate_text = str(candidate.get("transcript_text") or "").strip()
+    if not candidate_text:
+        return False
+    if len(candidate_text.split()) < transcript_window.MIN_SEMANTIC_WORDS:
+        return False
+    if threshold is None:
+        threshold = transcript_window.semantic_duplicate_threshold()
+    for other in existing:
+        other_text = str(other.get("transcript_text") or "").strip()
+        if not other_text or len(other_text.split()) < transcript_window.MIN_SEMANTIC_WORDS:
+            continue
+        is_dup, _sim = transcript_window.are_semantic_duplicates(
+            candidate_text, other_text, threshold)
+        if is_dup:
+            return True
+    return False
 
 
 def _windows_are_near_duplicates(left, right):
@@ -1145,6 +1261,192 @@ def _has_any_anchor(segment):
     return False
 
 
+# Minimum speech content for a viable clip (v7.40 validation): at least one
+# spoken word, and speech must cover more than a dead-air sliver of the
+# window. Windows between REJECT and LOW thresholds stay but are flagged and
+# scored down through audio/transcript-alignment factors; genuinely thin
+# clips lose the ranking to denser ones via information_density.
+MIN_WINDOW_WORDS = 1
+REJECT_SPEECH_COVERAGE = 0.05
+LOW_SPEECH_COVERAGE = 0.35
+
+
+def _validate_segment_window(start_time, end_time, min_duration, analysis):
+    """Hard validation of one candidate window (v7.40).
+
+    Returns ``(rejected_reasons, quality_flags)`` — explicit, human-readable
+    messages explaining why a segment was rejected (or what is suboptimal).
+    A segment is REJECTED for: end<=start, negative/invalid timestamps,
+    duration below the configured minimum (unless the transcript itself is
+    the limit), insufficient transcript text, or excessive silence. Boundary
+    issues that refinement could not fix become quality flags (they lower the
+    score through the completion/context factors) unless the strict env
+    ``VIRALCUTTER_STRICT_BOUNDARIES=1`` upgrades them to rejections.
+    """
+    rejected = []
+    flags = []
+    try:
+        start_time = float(start_time)
+        end_time = float(end_time)
+    except (TypeError, ValueError):
+        return ["invalid timestamps: not numeric"], flags
+    if start_time < 0 or end_time < 0:
+        rejected.append("invalid timestamps: negative value")
+    if end_time <= start_time:
+        rejected.append("end_time <= start_time")
+    if rejected:
+        return rejected, flags
+
+    duration = end_time - start_time
+    transcript_limited = bool(isinstance(analysis, dict) and analysis.get("transcript_limited"))
+    if duration < float(min_duration) and not transcript_limited:
+        rejected.append("duration {:.2f}s below minimum {:.2f}s".format(duration, float(min_duration)))
+
+    if not isinstance(analysis, dict) or not analysis:
+        rejected.append("insufficient transcript text inside window")
+        return rejected, flags
+
+    word_count = int(analysis.get("word_count") or 0)
+    if word_count < MIN_WINDOW_WORDS:
+        rejected.append("insufficient transcript text: {} word(s) inside window".format(word_count))
+
+    coverage = float(analysis.get("speech_coverage") or 0.0)
+    if analysis.get("text") and coverage < REJECT_SPEECH_COVERAGE:
+        rejected.append("excessive silence: speech covers {:.0%} of the window".format(coverage))
+    elif analysis.get("text") and coverage < LOW_SPEECH_COVERAGE:
+        flags.append("low speech density: {:.0%} of the window".format(coverage))
+
+    strict = os.getenv("VIRALCUTTER_STRICT_BOUNDARIES", "").strip().lower() in {"1", "true", "yes", "on"}
+    if analysis.get("starts_mid_sentence"):
+        message = "starts mid-sentence"
+        (rejected if strict else flags).append(message)
+    if analysis.get("ends_mid_sentence"):
+        message = "ends mid-sentence"
+        (rejected if strict else flags).append(message)
+    if analysis.get("starts_with_connector"):
+        flags.append("opens with a conjunction/connector")
+    if analysis.get("ends_incomplete"):
+        message = "ends on an incomplete phrase (preposition/conjunction)"
+        (rejected if strict else flags).append(message)
+    if float(analysis.get("leading_silence") or 0.0) > 1.5:
+        flags.append("leading silence {:.1f}s".format(float(analysis.get("leading_silence"))))
+    if float(analysis.get("trailing_silence") or 0.0) > 1.5:
+        flags.append("trailing silence {:.1f}s".format(float(analysis.get("trailing_silence"))))
+    return rejected, flags
+
+
+def _completion_status(analysis):
+    """Map a window analysis to the public completion_status label."""
+    if not isinstance(analysis, dict) or not analysis.get("text"):
+        return "incomplete"
+    if analysis.get("complete"):
+        return "complete"
+    if analysis.get("ends_incomplete") or analysis.get("starts_mid_sentence") or analysis.get("ends_mid_sentence"):
+        return "partial"
+    return "complete"
+
+
+def _compute_factor_scores(segment_entry, analysis, *, edge_match=1.0, title_relevance_ratio=0.0,
+                           repetition_penalty=0.0, safety_penalty=0.0):
+    """The 11-factor 0-100 score set for one candidate (v7.40).
+
+    Genuine AI self-evaluations are preferred for the editorial factors;
+    deterministic transcript-window heuristics fill every gap, so a candidate
+    whose AI shipped no self-evaluation (quality_missing) is now ranked on
+    real measurements instead of copies of its own virality score.
+    """
+    if clip_scoring is None:
+        return {}
+    virality = _bounded_score(segment_entry.get("score"), 0.0)
+
+    # Per-component genuineness: a component the AI actually shipped (not
+    # None) is used as-is even when other components are missing; only truly
+    # missing ones fall back to the deterministic window heuristics. (The
+    # all-or-nothing ``quality_missing`` flag stays for gate/UI compat.)
+    def _genuine(key, fallback):
+        value = segment_entry.get(key)
+        if value is None:
+            return fallback
+        return _bounded_score(value, fallback)
+
+    first_sentence = (analysis or {}).get("first_sentence") or ""
+    window_text = (analysis or {}).get("text") or ""
+    duration = float(segment_entry.get("duration") or 0.0)
+
+    factors = {
+        "hook_strength": _genuine(
+            "hook_strength",
+            clip_scoring.hook_strength_heuristic(first_sentence, fallback=virality)),
+        "standalone_context": clip_scoring.standalone_context_score(analysis),
+        "emotional_value": clip_scoring.emotional_value_heuristic(window_text),
+        "information_density": clip_scoring.information_density_score(
+            (analysis or {}).get("word_count") or 0, duration,
+            (analysis or {}).get("unique_ratio")),
+        "completion_score": clip_scoring.completion_score(analysis),
+        "transcript_alignment": clip_scoring.transcript_alignment_score(analysis, edge_match),
+        "audio_quality": clip_scoring.audio_quality_proxy(analysis),
+        "visual_quality": clip_scoring.visual_quality_score(segment_entry),
+        "title_relevance": round(max(0.0, min(100.0, float(title_relevance_ratio or 0.0) * 100.0)), 1),
+        "repetition_penalty": round(max(0.0, min(100.0, float(repetition_penalty or 0.0))), 1),
+        "safety_penalty": round(max(0.0, min(100.0, float(safety_penalty or 0.0))), 1),
+    }
+    # narrative_completeness (genuine AI eval) strengthens the completion
+    # factor when it shipped; clarity strengthens standalone context.
+    if segment_entry.get("narrative_completeness") is not None:
+        factors["completion_score"] = round(
+            0.6 * factors["completion_score"]
+            + 0.4 * _bounded_score(segment_entry.get("narrative_completeness"), virality), 1)
+    if segment_entry.get("clarity_score") is not None:
+        factors["standalone_context"] = round(
+            0.6 * factors["standalone_context"]
+            + 0.4 * _bounded_score(segment_entry.get("clarity_score"), virality), 1)
+    return factors
+
+
+def _apply_semantic_repetition_penalties(segments):
+    """Compute repetition_penalty from semantic similarity between candidates.
+
+    For every pair sharing the same idea with different wording (normalized
+    window transcript similarity in [0.55, dup_threshold)) the LOWER-scored
+    candidate earns a graduated penalty; pairs at/above the duplicate
+    threshold are left for deduplicate_segments to drop outright. Order is
+    deterministic: candidates are compared in their current list order and
+    each candidate is penalized only against higher-ranked ones.
+    """
+    if transcript_window is None or not segments:
+        return
+    texts = [str(seg.get("transcript_text") or "") for seg in segments]
+    if sum(1 for text in texts if len(text.split()) >= transcript_window.MIN_SEMANTIC_WORDS) < 2:
+        return
+    threshold = transcript_window.semantic_duplicate_threshold()
+    slope = transcript_window.repetition_penalty_slope()
+    lower_bound = 0.55
+    for index, candidate in enumerate(segments):
+        if len(texts[index].split()) < transcript_window.MIN_SEMANTIC_WORDS:
+            continue
+        worst = 0.0
+        for prior in range(index):
+            if len(texts[prior].split()) < transcript_window.MIN_SEMANTIC_WORDS:
+                continue
+            # Temporal near-duplicates are handled by deduplicate_segments;
+            # the penalty gradient is for the same IDEA at DIFFERENT times.
+            if _windows_are_near_duplicates(candidate, segments[prior]):
+                continue
+            similarity = transcript_window.guarded_semantic_similarity(texts[index], texts[prior])
+            if similarity >= threshold:
+                worst = max(worst, slope)
+            elif similarity >= lower_bound:
+                span = max(0.05, threshold - lower_bound)
+                worst = max(worst, slope * (similarity - lower_bound) / span)
+        if worst > 0.0:
+            factors = candidate.get("score_breakdown") or {}
+            factors["repetition_penalty"] = round(
+                max(float(factors.get("repetition_penalty") or 0.0), worst), 1)
+            candidate["score_breakdown"] = factors
+            if clip_scoring is not None:
+                candidate["selection_score"] = clip_scoring.compute_final_score(factors)
+
+
 def process_segments(raw_segments, transcript_segments, min_duration, max_duration, output_count=None, snap_to_boundaries=True, project_folder=None):
     """
     Aligns raw AI segments (with reference tags) to actual transcript timestamps.
@@ -1162,6 +1464,11 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     all_segments = raw_segments
     tempo_minimo = min_duration
     tempo_maximo = max_duration
+
+    # v7.40: word-level timings (WhisperX input.json) let the boundary
+    # refinement snap cut points to exact word edges; empty list → the
+    # segment-level fallback path is used unchanged.
+    word_timings = _load_word_timings(project_folder)
     
     # Sort segments by score (descending). Scores arrive as ints, floats OR
     # numeric strings depending on the AI backend — a single non-int value
@@ -1354,6 +1661,27 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 # A snap that overshoots min duration is still better than a
                 # mid-word cut: fall back to the raw (clamped) window.
 
+                # v7.40: boundary refinement on the same eligibility contract
+                # as snapping (text-matched or clamp-adjusted windows; clean
+                # explicit AI windows stay byte-exact). Repairs, in order:
+                # word-edge snapping (when word timings exist), Arabic
+                # connector openers (include the antecedent sentence),
+                # dangling preposition/conjunction endings (finish the
+                # sentence), then the configurable pre/post-roll. Duration
+                # limits and transcript bounds are re-enforced inside.
+                if transcript_window is not None:
+                    refined_start, refined_end, refine_notes = transcript_window.refine_boundaries(
+                        final_start_time, final_end_time, transcript_segments,
+                        words=word_timings,
+                        min_duration=tempo_minimo,
+                        max_duration=tempo_maximo,
+                        transcript_start=transcript_start_time,
+                        transcript_end=transcript_end_time)
+                    if (refined_end - refined_start) >= tempo_minimo or duration < tempo_minimo:
+                        if (refined_start, refined_end) != (final_start_time, final_end_time):
+                            final_start_time, final_end_time = refined_start, refined_end
+                            duration = final_end_time - final_start_time
+
             # Construct Final Segment
             hashtags = seg.get('hashtags', [])
             if isinstance(hashtags, str):
@@ -1411,6 +1739,54 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                 # an under-length clip.
                 segment_entry["under_min"] = True
                 segment_entry["transcript_limited"] = True
+
+            # --- v7.40: exact-window analysis, validation, factual titles ---
+            if transcript_window is not None:
+                analysis = transcript_window.analyze_window(
+                    transcript_segments, final_start_time, final_end_time)
+            else:
+                analysis = {"text": window_text, "word_count": len(window_text.split()),
+                            "speech_coverage": 1.0, "complete": True}
+            analysis["transcript_limited"] = bool(segment_entry.get("transcript_limited"))
+
+            rejected_reasons, quality_flags = _validate_segment_window(
+                final_start_time, final_end_time, tempo_minimo, analysis)
+            if rejected_reasons:
+                print("[WARN] Segment '{}' rejected: {}".format(
+                    seg.get('title', 'Untitled'), "; ".join(rejected_reasons)))
+                continue
+
+            raw_window_text = str(analysis.get("text") or "")
+            hook_text = str(analysis.get("first_sentence") or raw_window_text)
+            segment_entry["transcript_text"] = raw_window_text
+            segment_entry["hook_text"] = hook_text
+            segment_entry["completion_status"] = _completion_status(analysis)
+            segment_entry["quality_flags"] = quality_flags
+            segment_entry["rejected_reasons"] = []
+            segment_entry["window_analysis"] = {
+                "before_text": analysis.get("before_text", ""),
+                "after_text": analysis.get("after_text", ""),
+                "last_sentence": analysis.get("last_sentence", ""),
+                "leading_silence": analysis.get("leading_silence", 0.0),
+                "trailing_silence": analysis.get("trailing_silence", 0.0),
+                "speech_coverage": analysis.get("speech_coverage", 0.0),
+            }
+
+            if title_factual is not None:
+                content_language = title_factual.detect_content_language(raw_window_text)
+                title_data = title_factual.build_title_data(
+                    recommended, segment_entry.get("alt_titles") or [],
+                    raw_window_text, analysis, content_language)
+                if title_data.get("fallback_used") and title_data.get("primary_title"):
+                    # The LLM title failed factual validation: ship the
+                    # conservative transcript-derived title instead and keep
+                    # the original visible for audit.
+                    title_data["llm_title_replaced"] = recommended
+                    segment_entry["recommended_title"] = title_data["primary_title"]
+                    segment_entry["title_quality_score"] = _title_quality_score(
+                        title_data["primary_title"])
+                segment_entry["title_data"] = title_data
+            segment_entry["_analysis_cache"] = analysis
             processed_segments.append(segment_entry)
 
         except Exception as e:
@@ -1423,8 +1799,27 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
     # silently miss it for CLI/WebUI runs.
     weights_folder = project_folder or os.getcwd()
     perf_weights = performance_weights.load_weights(weights_folder) if performance_weights else None
+    selection_weights = clip_scoring.load_selection_weights() if clip_scoring else None
     for candidate in processed_segments:
         candidate["selection_score"], candidate["selection_breakdown"] = _selection_score(candidate, perf_weights)
+        # v7.40: the 11-factor editorial score becomes the primary selection
+        # score. The legacy six-component breakdown above is kept for
+        # backwards compatibility (review UI, performance learning), and the
+        # new factor-by-factor breakdown ships as ``score_breakdown``.
+        analysis = candidate.pop("_analysis_cache", None)
+        if clip_scoring is not None and analysis is not None:
+            window_text = candidate.get("transcript_text") or ""
+            title_relevance_ratio = _title_content_relevance(
+                candidate.get("recommended_title", ""), candidate,
+                window_text=window_text)
+            explicit_edges = 1.0
+            factors = _compute_factor_scores(
+                candidate, analysis, edge_match=explicit_edges,
+                title_relevance_ratio=title_relevance_ratio)
+            candidate["score_breakdown"] = factors
+            candidate["selection_score"] = clip_scoring.compute_final_score(
+                factors, selection_weights)
+            candidate["selection_version"] = clip_scoring.SCORING_VERSION
         if perf_weights:
             # Bounded outcome-driven nudges learned from the channel's own
             # publish history (see performance_weights.py): duration and
@@ -1451,6 +1846,25 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
                     candidate["selection_breakdown"]["style_bonus"] = round(style_bonus, 2)
                     candidate["selection_breakdown"]["style_basis"] = style_map.get("basis", "content_insights")
 
+    # v7.40: semantic repetition penalties — candidates expressing the same
+    # idea as an already stronger candidate in different words lose points
+    # BEFORE the editorial gate and de-duplication run.
+    _apply_semantic_repetition_penalties(processed_segments)
+
+    # v7.40: optional editorial floor — a thin video yields FEWER clips
+    # instead of weak padding (env VIRALCUTTER_MIN_FINAL_SCORE, default off).
+    if clip_scoring is not None:
+        floor = clip_scoring.min_final_score()
+        if floor > 0.0:
+            before = len(processed_segments)
+            processed_segments = [
+                candidate for candidate in processed_segments
+                if float(candidate.get("selection_score", 0.0) or 0.0) >= floor]
+            dropped_floor = before - len(processed_segments)
+            if dropped_floor:
+                print("[WARN] Editorial floor {:.0f}: dropped {} weak candidate(s); "
+                      "returning fewer, stronger clips.".format(floor, dropped_floor))
+
     # Editorial quality gate: drop candidates whose *genuine* self-evaluated
     # hook/narrative/clarity sit below the floor (weak clips lose the viewer
     # in the first seconds). Unverified (quality_missing) candidates are kept.
@@ -1475,15 +1889,26 @@ def process_segments(raw_segments, transcript_segments, min_duration, max_durati
         all_segments = _rank_segments_with_diversity(all_segments)
 
     final_result = {"segments": all_segments}
-    
+
+    # v7.40: record the exact selection configuration that produced these
+    # segments (weights + schema/prompt versions) so staleness checks and the
+    # review UI can tell which pipeline generated the list.
+    if clip_scoring is not None:
+        final_result["selection_config"] = {
+            "schema_version": SEGMENTS_SCHEMA_VERSION,
+            "scoring_version": clip_scoring.SCORING_VERSION,
+            "prompt_version": prompt_version_fingerprint(),
+            "weights": selection_weights or dict(clip_scoring.DEFAULT_SELECTION_WEIGHTS),
+        }
+
     # Validação básica de que temos start_time
     validated_segments = []
     for seg in final_result['segments']:
         if 'start_time' in seg:
              validated_segments.append(seg)
-    
+
     final_result['segments'] = validated_segments
-    
+
     return final_result
 
 
