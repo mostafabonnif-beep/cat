@@ -12,6 +12,9 @@ python3 -m pytest -o addopts="" -q   # 1405 passed in 28.83s
 python3 -m pip_audit --progress-spinner off   # see "Limitations"
 ```
 
+CI (GitHub Actions, run `34699632386` on commit `244c3d4`): **success** —
+`test (3.10)`, `test (3.11)`, `test (3.12)` all green.
+
 ---
 
 ## 1. Root causes found
