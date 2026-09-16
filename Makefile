@@ -1,49 +1,47 @@
-# OUSSAMA Cutter — أوامر التطوير الموحّدة
+# Makefile — أوامر التطوير المختصرة. اكتب `make` أو `make help` لعرض القائمة.
 .DEFAULT_GOAL := help
-.PHONY: help install dev-install lint fmt test test-fast cov clean run docker-up docker-down hooks audit
+.PHONY: help install dev-install lint fmt test cov audit run docker-up docker-down clean
 
-help:  ## اعرض هذه القائمة
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+PYTHON ?= python3
+PIP    ?= $(PYTHON) -m pip
 
-install:  ## ثبّت تبعيات التشغيل
-	pip install -r requirements.txt
+help: ## عرض هذه القائمة
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-dev-install:  ## ثبّت تبعيات التطوير + hooks
-	pip install -r requirements-dev.txt
+install: ## تثبيت متطلبات التشغيل
+	$(PIP) install -U pip
+	@if [ -f requirements.txt ]; then $(PIP) install -r requirements.txt; fi
+
+dev-install: install ## تثبيت أدوات التطوير وتفعيل pre-commit
+	$(PIP) install ruff pre-commit pytest pytest-cov pip-audit
 	pre-commit install
 
-hooks:  ## شغّل كل الفحوصات على كل الملفات
-	pre-commit run --all-files
-
-lint:  ## فحص الكود دون تعديل
+lint: ## فحص الكود دون تعديله
 	ruff check .
 	ruff format --check .
 
-fmt:  ## صحّح ونسّق الكود
-	ruff check --fix .
+fmt: ## تنسيق الكود وإصلاح ما يمكن إصلاحه تلقائياً
+	ruff check . --fix
 	ruff format .
 
-test:  ## كل الاختبارات
-	pytest -v
+test: ## تشغيل الاختبارات
+	pytest -q
 
-test-fast:  ## اختبارات سريعة (توقف عند أول فشل)
-	pytest -x -q
+cov: ## تشغيل الاختبارات مع تقرير التغطية
+	pytest --cov=. --cov-report=term-missing --cov-report=html
 
-cov:  ## تقرير التغطية
-	pytest --cov=scripts --cov=webui --cov-report=term-missing --cov-report=html
-
-audit:  ## فحص ثغرات التبعيات
+audit: ## تدقيق أمني للاعتماديات
 	pip-audit || true
 
-run:  ## شغّل الواجهة
-	python webui/app.py
+run: ## تشغيل التطبيق
+	$(PYTHON) main.py
 
-docker-up:  ## شغّل عبر Docker
-	docker compose up --build
+docker-up: ## تشغيل الحاويات
+	docker compose up -d --build
 
-docker-down:
+docker-down: ## إيقاف الحاويات
 	docker compose down
 
-clean:  ## احذف الملفات المؤقتة
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+clean: ## حذف الملفات المؤقتة ومخلّفات البناء
+	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .ruff_cache htmlcov .coverage build dist *.egg-info
