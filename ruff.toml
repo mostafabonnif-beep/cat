@@ -1,0 +1,53 @@
+# إعدادات Ruff — linter + formatter لمشروع Python
+target-version = "py310"
+line-length = 100
+indent-width = 4
+
+exclude = [
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "build",
+  "dist",
+  "node_modules",
+  "migrations",
+]
+
+[lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "UP",   # pyupgrade
+  "B",    # flake8-bugbear
+  "C4",   # flake8-comprehensions
+  "T20",  # flake8-print
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific
+]
+ignore = [
+  "E501",    # طول السطر يتولاه المُنسِّق
+  "B008",    # استدعاء دالة في قيمة افتراضية (شائع في FastAPI)
+  "RUF001",  # محارف يونيكود مُلتبِسة — النصوص العربية تُثيرها زوراً
+  "RUF002",
+  "RUF003",
+]
+
+[lint.per-file-ignores]
+"scripts/*" = ["T20"]      # الطباعة مقصودة في السكربتات
+"webui/*" = ["T20"]
+"**/webui/**" = ["T20"]
+"tests/*" = ["T20", "B011"]
+"__init__.py" = ["F401"]   # إعادة تصدير مقصودة
+
+[lint.isort]
+known-first-party = ["viralcutter"]
+combine-as-imports = true
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true

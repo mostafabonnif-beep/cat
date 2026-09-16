@@ -1,0 +1,19 @@
+# CODEOWNERS — مراجعة إلزامية للملفات الحسّاسة.
+# كل مسار هنا يستدعي مُراجِعاً تلقائياً عند أي Pull Request يلمسه.
+
+# المالك الافتراضي لكل شيء
+*                           @mostafabonnif-beep
+
+# منطق السلامة والرقابة — لا يُدمَج بدون مراجعة
+**/safety_filter.py         @mostafabonnif-beep
+**/upload_gate.py           @mostafabonnif-beep
+**/censor_engine.py         @mostafabonnif-beep
+
+# أتمتة CI/CD وإعدادات الجودة
+/.github/workflows/         @mostafabonnif-beep
+/.github/CODEOWNERS         @mostafabonnif-beep
+/.pre-commit-config.yaml    @mostafabonnif-beep
+/ruff.toml                  @mostafabonnif-beep
+
+# الأسرار والإعدادات
+/.env.example               @mostafabonnif-beep
