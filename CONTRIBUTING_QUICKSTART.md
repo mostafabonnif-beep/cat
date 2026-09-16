@@ -1,50 +1,55 @@
-# دليل الإسهام السريع — Quick Contributing
+# دليل البدء السريع للمساهمة
 
-> التفاصيل الكاملة في [CONTRIBUTING.md](CONTRIBUTING.md). هذا ملخّص عملي.
+مرحباً بك في **cat** (OUSSAMA Cutter / ViralCutter). هذا الدليل يوصلك من صفر إلى أول Pull Request في دقائق.
 
-## 1. التهيئة (مرة واحدة)
+## 1. التهيئة
 
 ```bash
 git clone https://github.com/mostafabonnif-beep/cat.git
 cd cat
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-make dev-install        # التبعيات + pre-commit hooks
-cp .env.example .env    # ثم املأ المفاتيح
+python3 -m venv .venv && source .venv/bin/activate
+make dev-install
+cp .env.example .env      # ثم املأ المفاتيح المطلوبة
 ```
 
-## 2. قبل كل commit
+> ملف `.env.example` يوثّق 61 متغيّراً بيئياً مُستخرَجاً آلياً من الكود، مقسّمة إلى أقسام مع شرح لكل متغيّر.
+> **لا تضع أي مفتاح حقيقي في `.env.example`** — المفاتيح تبقى في `.env` المحلي فقط.
+
+## 2. الأوامر اليومية
+
+| الأمر | الوظيفة |
+|---|---|
+| `make help` | عرض كل الأوامر المتاحة |
+| `make fmt` | تنسيق الكود وإصلاح الملاحظات تلقائياً |
+| `make lint` | فحص الكود دون تعديله (نفس ما يفحصه CI) |
+| `make test` | تشغيل الاختبارات |
+| `make cov` | الاختبارات + تقرير التغطية |
+| `make audit` | تدقيق أمني للاعتماديات |
+| `make clean` | تنظيف الملفات المؤقتة |
+
+## 3. معايير الكود
+
+- **Ruff** هو المرجع الوحيد للتنسيق والفحص (`ruff.toml`): طول السطر 100، اقتباس مزدوج، نهايات أسطر LF.
+- **pre-commit** يعمل تلقائياً قبل كل commit ويشمل: تنظيف المسافات، فحص YAML/TOML/JSON، منع الملفات الضخمة، وكشف الأسرار عبر **gitleaks**.
+- إن فشل الخطّاف وعدّل ملفات، أضِف التعديلات (`git add -A`) ثم أعِد الـ commit.
+
+## 4. سير العمل
 
 ```bash
-make fmt     # تنسيق تلقائي
-make lint    # فحص
-make test    # الاختبارات
+git checkout -b feat/وصف-قصير
+make fmt && make lint && make test
+git commit -m "feat: وصف واضح للتغيير"
+git push -u origin HEAD
 ```
 
-الـ hooks تعمل تلقائياً عند git commit وتمنع: مفاتيح مسرّبة، ملفات ضخمة، print منسي، أخطاء تنسيق.
+ثم افتح Pull Request نحو `main`.
 
-## 3. قواعد ذهبية للمشروع
+## 5. الملفات الحسّاسة
 
-| القاعدة | السبب |
-|---|---|
-| **الكتم (censor) قبل حرق الترجمة** | وإلا ظهر النص المحظور في الفيديو |
-| **لا تعطّل upload_gate** | البوابة الأخيرة قبل النشر — تمنع مخالفات يوتيوب |
-| **كل ميزة = اختبار** | tests/test_<الميزة>.py |
-| **لا مفاتيح في الكود** | استخدم .env أو api_config.local.json |
-| **الملفات الضخمة** | webui/app.py و create_viral_segments.py ضخمة — أضف الجديد في وحدة منفصلة |
+أي تعديل على منطق السلامة (`safety_filter.py`, `upload_gate.py`, `censor_engine.py`) أو على ملفات `.github/workflows/` يستدعي مراجعة إلزامية بحسب `.github/CODEOWNERS`. اشرح في وصف الـ PR سببَ التغيير وأثرَه.
 
-## 4. رسائل الـ commit
+## 6. قواعد الأمان
 
-```
-feat(subtitles): إضافة تأثير bounce
-fix(upload): معالجة انتهاء التوكن
-test(safety): تغطية allow_terms
-docs(readme): تحديث التثبيت
-chore(deps): ترقية yt-dlp
-```
-
-## 5. فتح PR
-
-1. فرع: git checkout -b feat/اسم-الميزة
-2. make lint && make test — يجب أن تنجح
-3. املأ قالب PR واذكر الاختبارات المضافة
-4. CI يفحص على Python 3.10 / 3.11 / 3.12
+- لا تضع مفتاحاً أو توكن في الكود أو في وصف الـ PR.
+- لا تُلغِ خطّافات pre-commit بـ `--no-verify`.
+- إن تسرّب مفتاح: ألغِه من لوحة المزوّد فوراً ثم أنشئ بديلاً.
