@@ -1,0 +1,39 @@
+# ruff — linter + formatter موحّد (يغني عن flake8/black/isort)
+# فحص:   ruff check .
+# تصحيح: ruff check --fix . && ruff format .
+target-version = "py310"
+line-length = 100
+extend-exclude = ["VIRALS", "build", "dist", ".venv", "fonts", "packaging"]
+
+[lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes — أخطاء حقيقية
+  "W",    # warnings
+  "I",    # isort — ترتيب الاستيرادات
+  "UP",   # pyupgrade
+  "B",    # bugbear — أخطاء منطقية شائعة
+  "C4",   # comprehensions
+  "T20",  # لا print في كود الإنتاج
+  "RUF",
+]
+ignore = [
+  "E501",   # الطول يتولاه الـ formatter
+  "B008",
+  "RUF001", # حروف عربية/يونيكود في النصوص — مقصودة هنا
+  "RUF002",
+  "RUF003",
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["T20", "B011"]
+"scripts/**" = ["T20"]   # سكربتات CLI تستخدم print عن قصد
+"webui/**" = ["T20"]
+"main_improved.py" = ["T20"]
+
+[lint.mccabe]
+max-complexity = 15
+
+[format]
+quote-style = "double"
+indent-style = "space"
