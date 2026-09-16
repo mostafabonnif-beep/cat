@@ -1,39 +1,53 @@
-# ruff — linter + formatter موحّد (يغني عن flake8/black/isort)
-# فحص:   ruff check .
-# تصحيح: ruff check --fix . && ruff format .
+# إعدادات Ruff — linter + formatter لمشروع Python
 target-version = "py310"
 line-length = 100
-extend-exclude = ["VIRALS", "build", "dist", ".venv", "fonts", "packaging"]
+indent-width = 4
+
+exclude = [
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "build",
+  "dist",
+  "node_modules",
+  "migrations",
+]
 
 [lint]
 select = [
   "E",    # pycodestyle errors
-  "F",    # pyflakes — أخطاء حقيقية
-  "W",    # warnings
-  "I",    # isort — ترتيب الاستيرادات
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
   "UP",   # pyupgrade
-  "B",    # bugbear — أخطاء منطقية شائعة
-  "C4",   # comprehensions
-  "T20",  # لا print في كود الإنتاج
-  "RUF",
+  "B",    # flake8-bugbear
+  "C4",   # flake8-comprehensions
+  "T20",  # flake8-print
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific
 ]
 ignore = [
-  "E501",   # الطول يتولاه الـ formatter
-  "B008",
-  "RUF001", # حروف عربية/يونيكود في النصوص — مقصودة هنا
+  "E501",    # طول السطر يتولاه المُنسِّق
+  "B008",    # استدعاء دالة في قيمة افتراضية (شائع في FastAPI)
+  "RUF001",  # محارف يونيكود مُلتبِسة — النصوص العربية تُثيرها زوراً
   "RUF002",
   "RUF003",
 ]
 
 [lint.per-file-ignores]
-"tests/**" = ["T20", "B011"]
-"scripts/**" = ["T20"]   # سكربتات CLI تستخدم print عن قصد
-"webui/**" = ["T20"]
-"main_improved.py" = ["T20"]
+"scripts/*" = ["T20"]      # الطباعة مقصودة في السكربتات
+"webui/*" = ["T20"]
+"**/webui/**" = ["T20"]
+"tests/*" = ["T20", "B011"]
+"__init__.py" = ["F401"]   # إعادة تصدير مقصودة
 
-[lint.mccabe]
-max-complexity = 15
+[lint.isort]
+known-first-party = ["viralcutter"]
+combine-as-imports = true
 
 [format]
 quote-style = "double"
 indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
