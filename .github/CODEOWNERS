@@ -1,0 +1,8 @@
+# مراجعة إلزامية — كل PR يحتاج موافقة المالك
+*       @mostafabonnif-beep
+
+# مناطق حسّاسة: بوابات السلامة والنشر
+/scripts/safety_filter.py    @mostafabonnif-beep
+/scripts/upload_gate.py      @mostafabonnif-beep
+/scripts/censor_engine.py    @mostafabonnif-beep
+/.github/workflows/          @mostafabonnif-beep
